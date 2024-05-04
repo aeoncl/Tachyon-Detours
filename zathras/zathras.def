@@ -1,0 +1,4 @@
+LIBRARY "zathras"
+
+EXPORTS
+	ImportMe @1
