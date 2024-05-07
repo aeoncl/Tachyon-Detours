@@ -87,7 +87,9 @@ void Hook() {
     DetourAttach(&(PVOID&)og_RegQueryValueExW, hook_RegQueryValueExW);
 
     og_GetWebAuthUrlEx = (GetWebAuthUrlEx_type)DetourFindFunction("msidcrl40.dll", "GetWebAuthUrlEx");
-    DetourAttach(&(PVOID&)og_GetWebAuthUrlEx, hook_GetWebAuthUrlEx);
+    if (og_GetWebAuthUrlEx != nullptr) {
+        DetourAttach(&(PVOID&)og_GetWebAuthUrlEx, hook_GetWebAuthUrlEx);
+    }
 
     LONG result = DetourTransactionCommit();
     if (result == NO_ERROR) {
@@ -115,8 +117,10 @@ void Unhook() {
     DetourDetach(&(PVOID&)og_InternetConnectW, hook_InternetConnectW);
     DetourDetach(&(PVOID&)og_getaddrinfo, hook_getaddrinfo);
     DetourDetach(&(PVOID&)og_RegQueryValueExW, hook_RegQueryValueExW);
-    DetourDetach(&(PVOID&)og_GetWebAuthUrlEx, hook_GetWebAuthUrlEx);
 
+    if (og_GetWebAuthUrlEx != nullptr) {
+        DetourDetach(&(PVOID&)og_GetWebAuthUrlEx, hook_GetWebAuthUrlEx);
+    }
 
     LONG result = DetourTransactionCommit();
     LOGGER->Log("Detaching Hooks result: %d", result);
@@ -196,6 +200,7 @@ LSTATUS handleRegValueStrW(const wchar_t* dataIn, LPBYTE lpData, LPDWORD lpcbDat
     }
 }
 
+//hi ani :D
 LSTATUS WINAPI hook_RegQueryValueExW(HKEY hkey, LPCWSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData)
 {
     LOGGER->Log(L"RegQueryValueExW: lpValueName: %s lpType: isNull: %d lpData isNull: %d lpcbData isNull: %d", lpValueName, lpType == nullptr, lpData == nullptr, lpcbData == nullptr);
@@ -241,5 +246,4 @@ HRESULT __stdcall hook_GetWebAuthUrlEx(VOID* hExternalIdentity, IDCRL_WEBAUTHOPT
     LOGGER->Log(L"GetWebAuthUrlEx: url: %s postData: %s", *pszSHA1UrlOut, *pszSHA1PostDataOut);
     return ERROR_SUCCESS;
 }
-
 
