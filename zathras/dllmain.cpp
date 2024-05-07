@@ -18,7 +18,6 @@ HttpOpenRequestA_type og_HttpOpenRequestA = nullptr;
 HttpOpenRequestW_type og_HttpOpenRequestW = nullptr;
 InternetConnectA_type og_InternetConnectA = nullptr;
 InternetConnectW_type og_InternetConnectW = nullptr;
-InternetCrackUrlW_type og_InternetCrackUrlW = nullptr;
 
 getaddrinfo_type og_getaddrinfo = nullptr;
 RegQueryValueExW_type og_RegQueryValueExW = nullptr;
@@ -81,13 +80,10 @@ void Hook() {
     og_InternetConnectW = (InternetConnectW_type)DetourFindFunction("wininet.dll", "InternetConnectW");
     DetourAttach(&(PVOID&)og_InternetConnectW, hook_InternetConnectW);
 
-    og_InternetCrackUrlW = (InternetCrackUrlW_type)DetourFindFunction("wininet.dll", "InternetCrackUrlW");
-    DetourAttach(&(PVOID&)og_InternetCrackUrlW, hook_InternetCrackUrlW);
-
     og_getaddrinfo = (getaddrinfo_type)DetourFindFunction("Ws2_32.dll", "getaddrinfo");
     DetourAttach(&(PVOID&)og_getaddrinfo, hook_getaddrinfo);
 
-    og_RegQueryValueExW = (RegQueryValueExW_type)DetourFindFunction("kernelbase.dll", "RegQueryValueExW");
+    og_RegQueryValueExW = (RegQueryValueExW_type)DetourFindFunction("Kernelbase.dll", "RegQueryValueExW");
     DetourAttach(&(PVOID&)og_RegQueryValueExW, hook_RegQueryValueExW);
 
     og_GetWebAuthUrlEx = (GetWebAuthUrlEx_type)DetourFindFunction("msidcrl40.dll", "GetWebAuthUrlEx");
@@ -117,7 +113,6 @@ void Unhook() {
     DetourDetach(&(PVOID&)og_HttpOpenRequestW, hook_HttpOpenRequestW);
     DetourDetach(&(PVOID&)og_InternetConnectA, hook_InternetConnectA);
     DetourDetach(&(PVOID&)og_InternetConnectW, hook_InternetConnectW);
-    DetourDetach(&(PVOID&)og_InternetCrackUrlW, hook_InternetCrackUrlW);
     DetourDetach(&(PVOID&)og_getaddrinfo, hook_getaddrinfo);
     DetourDetach(&(PVOID&)og_RegQueryValueExW, hook_RegQueryValueExW);
     DetourDetach(&(PVOID&)og_GetWebAuthUrlEx, hook_GetWebAuthUrlEx);
@@ -181,18 +176,23 @@ int WINAPI hook_getaddrinfo(PCSTR pNodeName, PCSTR pServiceName, const ADDRINFO*
 }
 
 LSTATUS handleRegValueStrW(const wchar_t* dataIn, LPBYTE lpData, LPDWORD lpcbData) {
+    size_t newLength = (wcslen(dataIn) + 1) * sizeof(wchar_t);
+
     if (lpData == nullptr && lpcbData != nullptr) {
         //Return the length of data;
-        *lpcbData = ((wcslen(dataIn) + 1) * sizeof(wchar_t)) + 20;
+        *lpcbData = newLength + 20;
         LOGGER->Log("Override reg string length: %d", *lpcbData);
         return ERROR_SUCCESS;
     }
     else if (lpData != nullptr && lpcbData != nullptr) {
         //return data;
+        *lpcbData = newLength;
         wcscpy_s((wchar_t*)lpData, *lpcbData, dataIn);
-        *lpcbData = ((wcslen(dataIn) + 1) * sizeof(wchar_t));
         LOGGER->Log(L"Override reg string data: %s", (wchar_t*)lpData);
         return ERROR_SUCCESS;
+    }
+    else {
+        return ERROR_BAD_ARGUMENTS;
     }
 }
 
@@ -206,12 +206,8 @@ LSTATUS WINAPI hook_RegQueryValueExW(HKEY hkey, LPCWSTR lpValueName, LPDWORD lpR
     }
 
     if (lpValueName != nullptr) {
-        if (wcscmp(lpValueName, L"ppstshost") == 0)
-        {
-            return handleRegValueStrW(L"127.0.0.1:8080", lpData, lpcbData);
-        }
-        else if (wcscmp(lpValueName, L"ppstsport") == 0) {
-            return handleRegValueStrW(OVERRIDE_WEB_PORT_W, lpData, lpcbData);
+        if (wcscmp(lpValueName, L"ppstshost") == 0) {
+            return handleRegValueStrW(OVERRIDE_URL_W, lpData, lpcbData);
         }
         else if (wcscmp(lpValueName, L"RemoteFile") == 0) {
             return handleRegValueStrW(L"http://127.0.0.1:8080/PPCRLconfig.srf", lpData, lpcbData);
@@ -220,59 +216,29 @@ LSTATUS WINAPI hook_RegQueryValueExW(HKEY hkey, LPCWSTR lpValueName, LPDWORD lpR
     return result;
 }
 
-BOOL __stdcall hook_InternetCrackUrlW(LPCWSTR lpszUrl, DWORD dwUrlLength, DWORD dwFlags, LPURL_COMPONENTSW lpUrlComponents)
-{
-    LOGGER->Log(L"InternetCrackUrlW: %s dwFlags: %d", lpszUrl, dwFlags);
-    return og_InternetCrackUrlW(lpszUrl, dwUrlLength, dwFlags, lpUrlComponents);
-    /*
-    URL_COMPONENTSW lpUrlComponents2 = *lpUrlComponents;
-
-    LOGGER->Log(L"InternetCrackUrlW: %s dwFlags: %d", lpszUrl, dwFlags);
-    BOOL result = og_InternetCrackUrlW(lpszUrl, dwUrlLength, dwFlags, &lpUrlComponents2);
-    if (result == FALSE) {
-        return result;
-    }
-
-    std::wstring newUrl(L"http://");
-    newUrl.append(OVERRIDE_URL_W);
-    newUrl.append(L":");
-    newUrl.append(OVERRIDE_WEB_PORT_W);
-    newUrl.append(lpUrlComponents2.lpszUrlPath);
-
-    BOOL result2 = og_InternetCrackUrlW(newUrl.c_str(), newUrl.length(), dwFlags, lpUrlComponents);
-    LOGGER->Log(L"InternetCrackUrlW: newUrl: %s newResult(T is 1): %d", newUrl.c_str(), result2);
-
-    if (result2 == FALSE){
-        LOGGER->Log("InternetCrackUrlW: Error: 0x%x", GetLastError());
-    }
-
-    return result2;
-    */
-}
-
-
-
-
 HRESULT __stdcall hook_GetWebAuthUrlEx(VOID* hExternalIdentity, IDCRL_WEBAUTHOPTION dwFlags, LPCWSTR szTargetServiceUrl, LPCWSTR wszServicePolicy, LPCWSTR wszAdditionalPostParams, LPCWSTR* pszSHA1UrlOut, LPCWSTR* pszSHA1PostDataOut)
 {
-    //Change https to http for sha1 url
     LOGGER->Log(L"GetWebAuthUrlEx: szTargetServiceUrl: %s wszServicePolicy: %s wszAdditionalPostParams: %s", szTargetServiceUrl, wszServicePolicy, wszAdditionalPostParams);
     HRESULT result = og_GetWebAuthUrlEx(hExternalIdentity, dwFlags, szTargetServiceUrl, wszServicePolicy, wszAdditionalPostParams, pszSHA1UrlOut, pszSHA1PostDataOut);
     if (result != 0) {
         return result;
     }
 
-    std::wstring httpSanitizedUrl(*pszSHA1UrlOut);
+    std::wstring proxyUrlFilled(*pszSHA1UrlOut);
+    size_t startPathIndex = proxyUrlFilled.find('/', 8);
 
-    size_t httpsIndexOf = httpSanitizedUrl.find(L"https");
-    if (httpsIndexOf >= 0) {
-        httpSanitizedUrl.replace(httpsIndexOf, 5, L"http");
+    std::wstring newUrl(L"http://");
+    newUrl.append(OVERRIDE_URL_W);
+    newUrl.append(L":");
+    newUrl.append(OVERRIDE_WEB_PORT_W);
+
+    if (startPathIndex > 0) {
+        newUrl.append(proxyUrlFilled.substr(startPathIndex, -1));
     }
 
-    //HRESULT cpyResult = wcscpy_s((wchar_t*)*pszSHA1UrlOut, (wcslen((wchar_t*)*pszSHA1UrlOut) + 1) * sizeof(wchar_t), httpSanitizedUrl.c_str());
-    wcscpy((wchar_t*)*pszSHA1UrlOut, httpSanitizedUrl.c_str());
-
-    LOGGER->Log(L"GetWebAuthUrlEx: url: %s postData: %s cpyResult: 0x%x", *pszSHA1UrlOut, *pszSHA1PostDataOut, 0);
+    wcscpy((wchar_t*)*pszSHA1UrlOut, newUrl.c_str());
+    
+    LOGGER->Log(L"GetWebAuthUrlEx: url: %s postData: %s", *pszSHA1UrlOut, *pszSHA1PostDataOut);
     return ERROR_SUCCESS;
 }
 
