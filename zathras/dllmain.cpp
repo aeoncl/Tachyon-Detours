@@ -4,6 +4,8 @@
 
 #include <detours.h>
 #pragma comment(lib, "detours")
+//For ntoa TODO remove
+#pragma comment(lib, "Ws2_32.lib")
 
 BOOL Hooked = FALSE;
 Logger *LOGGER = nullptr;
@@ -20,6 +22,8 @@ InternetConnectA_type og_InternetConnectA = nullptr;
 InternetConnectW_type og_InternetConnectW = nullptr;
 
 getaddrinfo_type og_getaddrinfo = nullptr;
+connect_type og_connect = nullptr;
+
 RegQueryValueExW_type og_RegQueryValueExW = nullptr;
 
 GetWebAuthUrlEx_type og_GetWebAuthUrlEx = nullptr;
@@ -83,6 +87,9 @@ void Hook() {
     og_getaddrinfo = (getaddrinfo_type)DetourFindFunction("Ws2_32.dll", "getaddrinfo");
     DetourAttach(&(PVOID&)og_getaddrinfo, hook_getaddrinfo);
 
+    og_connect = (connect_type)DetourFindFunction("Ws2_32.dll", "connect");
+    DetourAttach(&(PVOID&)og_connect, hook_connect);
+
     og_RegQueryValueExW = (RegQueryValueExW_type)DetourFindFunction("Kernelbase.dll", "RegQueryValueExW");
     DetourAttach(&(PVOID&)og_RegQueryValueExW, hook_RegQueryValueExW);
 
@@ -116,6 +123,8 @@ void Unhook() {
     DetourDetach(&(PVOID&)og_InternetConnectA, hook_InternetConnectA);
     DetourDetach(&(PVOID&)og_InternetConnectW, hook_InternetConnectW);
     DetourDetach(&(PVOID&)og_getaddrinfo, hook_getaddrinfo);
+    DetourDetach(&(PVOID&)og_connect, hook_connect);
+
     DetourDetach(&(PVOID&)og_RegQueryValueExW, hook_RegQueryValueExW);
 
     if (og_GetWebAuthUrlEx != nullptr) {
@@ -155,8 +164,13 @@ HINTERNET WINAPI hook_HttpOpenRequestW(HINTERNET hConnect, LPCWSTR lpszVerb, LPC
 }
 
 HINTERNET WINAPI hook_InternetConnectA(HINTERNET hInternet, LPCSTR lpszServerName, INTERNET_PORT nServerPort, LPCSTR lpszUserName, LPCSTR lpszPassword, DWORD dwService, DWORD dwFlags, DWORD_PTR dwContext) {
-    LOGGER->Log("InternetConnectA: lpswServerName: %s nServerPort: %d", lpszServerName, nServerPort);
-    return og_InternetConnectA(hInternet, "127.0.0.1", 8080, lpszUserName, lpszPassword, dwService, dwFlags, dwContext);
+    LOGGER->Log("InternetConnectA: lpswServerName: %s nServerPort: %d dwFlags: 0x%x", lpszServerName, nServerPort, dwFlags);
+    HINTERNET handle = og_InternetConnectA(hInternet, "127.0.0.1", 8080, lpszUserName, lpszPassword, dwService, dwFlags, dwContext);
+
+    DWORD error = GetLastError();
+    LOGGER->Log("InternetConnectA error: %d", error);
+
+    return handle;
 }
 
 HINTERNET WINAPI hook_InternetConnectW(HINTERNET hInternet, LPCWSTR lpszServerName, INTERNET_PORT nServerPort, LPCWSTR lpszUserName, LPCWSTR lpszPassword, DWORD dwService, DWORD dwFlags, DWORD_PTR dwContext) {
@@ -166,6 +180,15 @@ HINTERNET WINAPI hook_InternetConnectW(HINTERNET hInternet, LPCWSTR lpszServerNa
 
 int WINAPI hook_getaddrinfo(PCSTR pNodeName, PCSTR pServiceName, const ADDRINFO* pHints, PADDRINFOA* ppResult) {
     LOGGER->Log("getaddrinfo: pNodeName: %s  pServiceName: %s ", pNodeName, pServiceName);
+    LOGGER->Log("pHints");
+    LOGGER->Log("  ai_flags: %d", pHints->ai_flags);
+    LOGGER->Log("  ai_family: %d", pHints->ai_family);
+    LOGGER->Log("  ai_socktype: %d", pHints->ai_socktype);
+    LOGGER->Log("  ai_protocol: %d", pHints->ai_protocol);
+    LOGGER->Log("  ai_addrlen: %d", pHints->ai_addrlen);
+    LOGGER->Log("  ai_canonname: %s", pHints->ai_canonname);
+
+    //&& strcmp(pNodeName, "www.microsoft.com") != 0
     if (pNodeName != nullptr) {
         PCSTR og = pNodeName;
         pNodeName = "127.0.0.1";
@@ -176,7 +199,51 @@ int WINAPI hook_getaddrinfo(PCSTR pNodeName, PCSTR pServiceName, const ADDRINFO*
         //TODO Replace NS Port
     }
 
-    return og_getaddrinfo(pNodeName, pServiceName, pHints, ppResult);
+    int result = og_getaddrinfo(pNodeName, pServiceName, pHints, ppResult);
+
+
+    struct addrinfo* ptr = NULL;
+    int count = 0;
+    for (ptr = (addrinfo*)*ppResult; ptr != NULL; ptr = ptr->ai_next) {
+        LOGGER->Log("Result %d", count);
+        LOGGER->Log("  ai_flags: %d", ptr->ai_flags);
+        LOGGER->Log("  ai_family: %d", ptr->ai_family);
+        LOGGER->Log("  ai_socktype: %d", ptr->ai_socktype);
+        LOGGER->Log("  ai_protocol: %d", ptr->ai_protocol);
+        LOGGER->Log("  ai_addrlen: %d", ptr->ai_addrlen);
+        LOGGER->Log("  ai_canonname: %s", ptr->ai_canonname);
+
+        sockaddr_in* sockaddr_ipv4 = (sockaddr_in*)ptr->ai_addr;
+        LOGGER->Log("  IPv4 address: %s", inet_ntoa(sockaddr_ipv4->sin_addr));
+        LOGGER->Log("  IPv4 port: %hu", htons(sockaddr_ipv4->sin_port));
+        LOGGER->Log("  IPv4 family: 0x%x", sockaddr_ipv4->sin_family);
+
+        count++;
+    }
+
+
+    return result;
+}
+
+int WSAAPI hook_connect(SOCKET s, const sockaddr* name, int namelen)
+{
+    sockaddr_in* sockaddr_ipv4 = (sockaddr_in*)name;
+    
+    u_short targetPort = htons(sockaddr_ipv4->sin_port);
+
+    LOGGER->Log("connect: namelen: %d", namelen);
+    LOGGER->Log("  IPv4 address: %s", inet_ntoa(sockaddr_ipv4->sin_addr));
+    LOGGER->Log("  IPv4 port: %hu", htons(sockaddr_ipv4->sin_port));
+    LOGGER->Log("  IPv4 family: 0x%x", sockaddr_ipv4->sin_family);
+
+    if (targetPort == 80) {
+        LOGGER->Log("connect: redirect microsoft.com TCP Ping to Notification Server");
+        sockaddr_ipv4->sin_port = ntohs(1863);
+    }
+    
+    int result = og_connect(s, name, namelen);
+    LOGGER->Log("connect result: 0x%x", result);
+    return result;
 }
 
 LSTATUS handleRegValueStrW(const wchar_t* dataIn, LPBYTE lpData, LPDWORD lpcbData) {
@@ -203,7 +270,7 @@ LSTATUS handleRegValueStrW(const wchar_t* dataIn, LPBYTE lpData, LPDWORD lpcbDat
 //hi ani :D
 LSTATUS WINAPI hook_RegQueryValueExW(HKEY hkey, LPCWSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData)
 {
-    LOGGER->Log(L"RegQueryValueExW: lpValueName: %s lpType: isNull: %d lpData isNull: %d lpcbData isNull: %d", lpValueName, lpType == nullptr, lpData == nullptr, lpcbData == nullptr);
+    //LOGGER->Log(L"RegQueryValueExW: lpValueName: %s lpType: isNull: %d lpData isNull: %d lpcbData isNull: %d", lpValueName, lpType == nullptr, lpData == nullptr, lpcbData == nullptr);
     LSTATUS result = og_RegQueryValueExW(hkey, lpValueName, lpReserved, lpType, lpData, lpcbData);
 
     if (result != ERROR_SUCCESS) {
