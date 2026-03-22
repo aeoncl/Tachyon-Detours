@@ -191,6 +191,10 @@ HINTERNET WINAPI hook_HttpOpenRequestW(HINTERNET hConnect, LPCWSTR lpszVerb, LPC
     return og_HttpOpenRequestW(hConnect, lpszVerb, lpszObjectName, lpszVersion, lpszReferrer, lplpszAcceptTypes, dwFlags & ~INTERNET_FLAG_SECURE, dwContext);
 }
 
+/*
+the INTERNET_OPTION_DATA_SEND_TIMEOUT flag is unused in HTTP connections. we use it as a magic value to disable the bypass in HttpOpenRequest, where we don't have access to the url.
+*/
+
 HINTERNET WINAPI hook_InternetConnectA(HINTERNET hInternet, LPCSTR lpszServerName, INTERNET_PORT nServerPort, LPCSTR lpszUserName, LPCSTR lpszPassword, DWORD dwService, DWORD dwFlags, DWORD_PTR dwContext) {
     LOGGER->LogLine("InternetConnectA: lpswServerName: %s nServerPort: %d dwFlags: 0x%x dwContext: 0x%x", lpszServerName, nServerPort, dwFlags, dwContext);
 
@@ -214,7 +218,6 @@ HINTERNET WINAPI hook_InternetConnectA(HINTERNET hInternet, LPCSTR lpszServerNam
         return handle;
     }
 }
-
 
 HINTERNET WINAPI hook_InternetConnectW(HINTERNET hInternet, LPCWSTR lpszServerName, INTERNET_PORT nServerPort, LPCWSTR lpszUserName, LPCWSTR lpszPassword, DWORD dwService, DWORD dwFlags, DWORD_PTR dwContext) {
     LOGGER->LogLine(L"InternetConnectW: lpswServerName: %s nServerPort: %d dwFlags: 0x%x  dwContext: 0x%x", lpszServerName, nServerPort, dwFlags, dwContext);
