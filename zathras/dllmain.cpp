@@ -192,7 +192,7 @@ HINTERNET WINAPI hook_HttpOpenRequestW(HINTERNET hConnect, LPCWSTR lpszVerb, LPC
 }
 
 /*
-the INTERNET_OPTION_DATA_SEND_TIMEOUT flag is unused in HTTP connections. we use it as a magic value to disable the bypass in HttpOpenRequest, where we don't have access to the url.
+the INTERNET_OPTION_DATA_SEND_TIMEOUT flag is unused in HTTP connections (only in FTP). we use it as a magic value to disable the bypass in HttpOpenRequest, where we don't have access to the url.
 */
 
 HINTERNET WINAPI hook_InternetConnectA(HINTERNET hInternet, LPCSTR lpszServerName, INTERNET_PORT nServerPort, LPCSTR lpszUserName, LPCSTR lpszPassword, DWORD dwService, DWORD dwFlags, DWORD_PTR dwContext) {
@@ -355,7 +355,7 @@ LSTATUS handleRegValueStrW(const wchar_t* dataIn, LPBYTE lpData, LPDWORD lpcbDat
     if (lpData == nullptr && lpcbData != nullptr) {
         //Return the length of data;
         *lpcbData = newLength + 20;
-        LOGGER->LogLine("Override reg string length: %d", *lpcbData);
+        LOGGER->LogLine(L"Override reg string length: %d", *lpcbData);
         return ERROR_SUCCESS;
     }
     else if (lpData != nullptr && lpcbData != nullptr) {
