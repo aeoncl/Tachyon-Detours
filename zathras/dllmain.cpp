@@ -31,6 +31,9 @@ connect_type og_connect = nullptr;
 
 RegQueryValueExW_type og_RegQueryValueExW = nullptr;
 
+InitializeEx_type og_InitializeExMsid = nullptr;
+Initialize_type og_InitializeMsid = nullptr;
+SetIdcrlOptions_type og_SetIdcrlOptions = nullptr;
 GetWebAuthUrlEx_type og_GetWebAuthUrlEx = nullptr;
  
 BOOL APIENTRY DllMain(HMODULE hModule,
@@ -104,6 +107,17 @@ void Hook() {
     og_RegQueryValueExW = (RegQueryValueExW_type)DetourFindFunction("Kernelbase.dll", "RegQueryValueExW");
     DetourAttach(&(PVOID&)og_RegQueryValueExW, hook_RegQueryValueExW);
 
+    //MSIDCRL
+
+    og_InitializeExMsid = (InitializeEx_type)DetourFindFunction("msidcrl40.dll", "InitializeEx");
+    if (og_InitializeExMsid != nullptr) {
+        DetourAttach(&(PVOID&)og_InitializeExMsid, hook_InitializeExMsid);
+    }
+
+    og_InitializeMsid = (Initialize_type)DetourFindFunction("msidcrl40.dll", "Initialize");
+    og_SetIdcrlOptions = (SetIdcrlOptions_type)DetourFindFunction("msidcrl40.dll", "SetIdcrlOptions");
+
+
     og_GetWebAuthUrlEx = (GetWebAuthUrlEx_type)DetourFindFunction("msidcrl40.dll", "GetWebAuthUrlEx");
     if (og_GetWebAuthUrlEx != nullptr) {
         DetourAttach(&(PVOID&)og_GetWebAuthUrlEx, hook_GetWebAuthUrlEx);
@@ -138,6 +152,10 @@ void Unhook() {
 
     DetourDetach(&(PVOID&)og_RegQueryValueExW, hook_RegQueryValueExW);
 
+    if (og_InitializeExMsid != nullptr) {
+        DetourDetach(&(PVOID&)og_InitializeExMsid, hook_InitializeExMsid);
+    }
+
     if (og_GetWebAuthUrlEx != nullptr) {
         DetourDetach(&(PVOID&)og_GetWebAuthUrlEx, hook_GetWebAuthUrlEx);
     }
@@ -147,6 +165,28 @@ void Unhook() {
     
     Hooked = !(result == NO_ERROR);
     Cleanup();
+}
+
+
+HRESULT __stdcall hook_InitializeExMsid(REFGUID appId, long idclrVersion, UPDATE_FLAG dwflags, IDCRL_OPTION pOptions[], DWORD dwOptions)
+{
+    LOGGER->LogLine("MSIDCRL_InitializeEx: idclrVersion: %d dwflags: 0x%x", idclrVersion, dwflags);
+
+    for (DWORD i = 0; i < dwOptions; i++) {
+        IDCRL_OPTION current = pOptions[i];
+        if (current.dwId == IDCRL_OPTION_ID::IDCRL_OPTION_ENVIRONMENT) {
+            const wchar_t* newEnv = L"Tachyon";
+            wchar_t* dest = (wchar_t*)current.pValue;
+            LOGGER->LogLine(L"MSIDCRL_InitializeEx: ENV: %s", dest);
+            errno_t error = wcscpy_s(dest, current.cbValue, newEnv);
+            LOGGER->LogLine(L"MSIDCRL_InitializeEx: Replace Environment... err string copy: %d - Value: %s", error, dest);
+        }
+    }
+
+    HRESULT result = og_InitializeExMsid(appId, idclrVersion, dwflags, pOptions, dwOptions);
+
+    LOGGER->LogLine("MSIDCRL_InitializeEx: Result: InitializeMsidEx: 0x%x", result);
+    return result;
 }
 
 
@@ -198,7 +238,7 @@ the INTERNET_OPTION_DATA_SEND_TIMEOUT flag is unused in HTTP connections (only i
 HINTERNET WINAPI hook_InternetConnectA(HINTERNET hInternet, LPCSTR lpszServerName, INTERNET_PORT nServerPort, LPCSTR lpszUserName, LPCSTR lpszPassword, DWORD dwService, DWORD dwFlags, DWORD_PTR dwContext) {
     LOGGER->LogLine("InternetConnectA: lpswServerName: %s nServerPort: %d dwFlags: 0x%x dwContext: 0x%x", lpszServerName, nServerPort, dwFlags, dwContext);
 
-    if (strcmp(lpszServerName, "matrix.org") == 0 || strcmp(lpszServerName, "tachyon.chat") == 0) {
+    if (strcmp(lpszServerName, "matrix.org") == 0 || strcmp(lpszServerName, "tachyon.chat") == 0 || strcmp(lpszServerName, "git.federated.nexus") == 0) {
         LOGGER->LogLine("InternetConnectA: Bypass: lpswServerName: %s nServerPort: %d dwFlags: 0x%x", lpszServerName, nServerPort, dwFlags);
 
         DWORD flag = IGNORE_MAGIC;
@@ -222,7 +262,7 @@ HINTERNET WINAPI hook_InternetConnectA(HINTERNET hInternet, LPCSTR lpszServerNam
 HINTERNET WINAPI hook_InternetConnectW(HINTERNET hInternet, LPCWSTR lpszServerName, INTERNET_PORT nServerPort, LPCWSTR lpszUserName, LPCWSTR lpszPassword, DWORD dwService, DWORD dwFlags, DWORD_PTR dwContext) {
     LOGGER->LogLine(L"InternetConnectW: lpswServerName: %s nServerPort: %d dwFlags: 0x%x  dwContext: 0x%x", lpszServerName, nServerPort, dwFlags, dwContext);
 
-    if (wcscmp(lpszServerName, L"matrix.org") == 0 || wcscmp(lpszServerName, L"tachyon.chat") == 0) {
+    if (wcscmp(lpszServerName, L"matrix.org") == 0 || wcscmp(lpszServerName, L"tachyon.chat") == 0 || wcscmp(lpszServerName, L"git.federated.nexus") == 0) {
         LOGGER->LogLine(L"InternetConnectW: Bypass: lpswServerName: %s nServerPort: %d dwFlags: 0x%x", lpszServerName, nServerPort, dwFlags);
 
         DWORD flag = IGNORE_MAGIC;
