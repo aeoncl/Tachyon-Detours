@@ -6,6 +6,8 @@
 #pragma comment(lib, "detours")
 //For ntoa TODO remove
 #pragma comment(lib, "Ws2_32.lib")
+#pragma comment(lib, "Ole32.lib")
+
 
 #define IGNORE_MAGIC 0xDEADBEEF
 
@@ -16,6 +18,10 @@ static const char* OVERRIDE_URL = "127.0.0.1";
 static const wchar_t* OVERRIDE_URL_W = L"127.0.0.1";
 static const char* OVERRIDE_WEB_PORT = "8080";
 static const wchar_t* OVERRIDE_WEB_PORT_W = L"8080";
+
+static const CLSID ORIGINAL_CONTACT_CLSID = { 0x380689D0,0xAFAA,0x47E6,{0xB8,0x0E,0xA3,0x34,0x36,0xFE,0x31,0x4B} };
+static const CLSID NEW_CONTACT_CLSID = { 0xD86BCC3A,0x303F,0x41C9,{0xAF,0x6B,0x5E,0x30,0xC3,0x8F,0xAF,0x36} };
+
 
 WinVerifyTrustEx_type og_WinVerifyTrustEx = nullptr;
 HttpOpenRequestA_type og_HttpOpenRequestA = nullptr;
@@ -30,6 +36,9 @@ getaddrinfo_type og_getaddrinfo = nullptr;
 connect_type og_connect = nullptr;
 
 RegQueryValueExW_type og_RegQueryValueExW = nullptr;
+
+CoRegisterClassObject_type og_CoRegisterClassObject = nullptr;
+CoCreateInstance_type og_CoCreateInstance = nullptr;
 
 InitializeEx_type og_InitializeExMsid = nullptr;
 Initialize_type og_InitializeMsid = nullptr;
@@ -107,6 +116,13 @@ void Hook() {
     og_RegQueryValueExW = (RegQueryValueExW_type)DetourFindFunction("Kernelbase.dll", "RegQueryValueExW");
     DetourAttach(&(PVOID&)og_RegQueryValueExW, hook_RegQueryValueExW);
 
+    //OLE32
+    og_CoRegisterClassObject = (CoRegisterClassObject_type)DetourFindFunction("ole32.dll", "CoRegisterClassObject");
+    DetourAttach(&(PVOID&)og_CoRegisterClassObject, hook_CoRegisterClassObject);
+
+    og_CoCreateInstance = (CoCreateInstance_type)DetourFindFunction("ole32.dll", "CoCreateInstance");
+    DetourAttach(&(PVOID&)og_CoCreateInstance, hook_CoCreateInstance);
+
     //MSIDCRL
 
     og_InitializeExMsid = (InitializeEx_type)DetourFindFunction("msidcrl40.dll", "InitializeEx");
@@ -151,6 +167,10 @@ void Unhook() {
     DetourDetach(&(PVOID&)og_connect, hook_connect);
 
     DetourDetach(&(PVOID&)og_RegQueryValueExW, hook_RegQueryValueExW);
+
+    //OLE32
+    DetourDetach(&(PVOID&)og_CoRegisterClassObject, hook_CoRegisterClassObject);
+    DetourDetach(&(PVOID&)og_CoCreateInstance, hook_CoCreateInstance);
 
     if (og_InitializeExMsid != nullptr) {
         DetourDetach(&(PVOID&)og_InitializeExMsid, hook_InitializeExMsid);
@@ -246,7 +266,7 @@ HINTERNET WINAPI hook_InternetConnectA(HINTERNET hInternet, LPCSTR lpszServerNam
         DWORD error = GetLastError();
         if (error == ERROR_SUCCESS) {
             LOGGER->LogLine("InternetConnectA: Setting bypass option.");
-            bool bypassOptionResult = og_InternetSetOptionA(handle, INTERNET_OPTION_DATA_SEND_TIMEOUT, &flag, sizeof(flag));
+            HINTERNET handleSetOption = og_InternetSetOptionA(handle, INTERNET_OPTION_DATA_SEND_TIMEOUT, &flag, sizeof(flag));
         }
         LOGGER->LogLine("InternetConnectA error: %d", error);
         return handle;
@@ -270,7 +290,7 @@ HINTERNET WINAPI hook_InternetConnectW(HINTERNET hInternet, LPCWSTR lpszServerNa
         DWORD error = GetLastError();
         if (error == ERROR_SUCCESS) {
             LOGGER->LogLine(L"InternetConnectW: Setting bypass option.");
-            bool bypassOptionResult = og_InternetSetOptionW(handle, INTERNET_OPTION_DATA_SEND_TIMEOUT, &flag, sizeof(flag));
+            HINTERNET handleSetOption = og_InternetSetOptionW(handle, INTERNET_OPTION_DATA_SEND_TIMEOUT, &flag, sizeof(flag));
         }
         LOGGER->LogLine(L"InternetConnectW error: %d", error);
         return handle;
@@ -280,44 +300,6 @@ HINTERNET WINAPI hook_InternetConnectW(HINTERNET hInternet, LPCWSTR lpszServerNa
         DWORD error = GetLastError();
         LOGGER->LogLine(L"InternetConnectW error: %d", error);
         return handle;
-    }
-}
-
-void DumpRawMemory(DWORD_PTR dwContext, SIZE_T dumpSize)
-{
-    if (dwContext == 0) {
-        LOGGER->LogLine(L"dwContext is NULL");
-        return;
-    }
-
-    const BYTE* ptr = (const BYTE*)dwContext;
-
-    LOGGER->Log(L"Raw memory at 0x%p (%zu bytes):\n\n", (void*)dwContext, dumpSize);
-
-    for (SIZE_T i = 0; i < dumpSize; i += 16)
-    {
-        // Print offset
-        LOGGER->Log(L"  +%04zX  ", i);
-
-        // Print hex bytes
-        for (SIZE_T j = 0; j < 16; j++)
-        {
-            if (i + j < dumpSize)
-                LOGGER->Log(L"%02X ", ptr[i + j]);
-            else
-                LOGGER->Log(L"   ");
-
-            if (j == 7) LOGGER->Log(L" ");  // extra space at midpoint
-        }
-
-        // Print ASCII representation
-        LOGGER->Log(L" |");
-        for (SIZE_T j = 0; j < 16 && i + j < dumpSize; j++)
-        {
-            BYTE b = ptr[i + j];
-            LOGGER->Log(L"%c", (b >= 0x20 && b < 0x7F) ? b : L'.');
-        }
-        LOGGER->Log(L"|\n");
     }
 }
 
@@ -408,6 +390,26 @@ LSTATUS handleRegValueStrW(const wchar_t* dataIn, LPBYTE lpData, LPDWORD lpcbDat
     else {
         return ERROR_BAD_ARGUMENTS;
     }
+}
+
+HRESULT __stdcall hook_CoRegisterClassObject(REFCLSID rclsid, LPUNKNOWN pUnk, CLSCTX dwClsContext, DWORD flags, LPDWORD lpdwRegister)
+{
+    return og_CoRegisterClassObject(
+        IsEqualCLSID(rclsid, ORIGINAL_CONTACT_CLSID) ? NEW_CONTACT_CLSID : rclsid,
+        pUnk,
+        dwClsContext,
+        flags,
+        lpdwRegister);
+}
+
+HRESULT __stdcall hook_CoCreateInstance(REFCLSID rclsid, LPUNKNOWN pUnkOuter, CLSCTX dwClsContext, REFIID riid, LPVOID* ppv)
+{
+    return og_CoCreateInstance(IsEqualCLSID(rclsid, ORIGINAL_CONTACT_CLSID) ? NEW_CONTACT_CLSID : rclsid,
+        pUnkOuter,
+        dwClsContext,
+        riid,
+        ppv
+    );
 }
 
 //hi ani :D

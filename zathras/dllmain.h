@@ -3,7 +3,7 @@
 #include <WinInet.h>
 #include <WS2tcpip.h>
 #include "idcrl.h"
-
+#include <Ole2.h>
 //WinTrust
 typedef long(WINAPI* WinVerifyTrustEx_type)(HWND hwnd, GUID* pgActionID, WINTRUST_DATA* pWinTrustData);
 
@@ -24,6 +24,9 @@ typedef int(WSAAPI* connect_type)(SOCKET s, const sockaddr* name, int namelen);
 
 typedef LSTATUS(WINAPI* RegQueryValueExW_type)(HKEY hkey, LPCWSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData);
 
+//ole32
+typedef HRESULT(__stdcall* CoRegisterClassObject_type)(REFCLSID rclsid, LPUNKNOWN pUnk, CLSCTX dwClsContext, DWORD flags, LPDWORD lpdwRegister);
+typedef HRESULT(__stdcall* CoCreateInstance_type)(REFCLSID rclsid, LPUNKNOWN pUnkOuter, CLSCTX dwClsContext, REFIID riid, LPVOID* ppv);
 
 //Hooks
 long WINAPI hook_WinVerifyTrustEx(HWND hwnd, GUID* pgActionID, WINTRUST_DATA* pWinTrustData);
@@ -33,6 +36,10 @@ HINTERNET WINAPI hook_InternetConnectA(HINTERNET hInternet, LPCSTR lpszServerNam
 HINTERNET WINAPI hook_InternetConnectW(HINTERNET hInternet, LPCWSTR lpszServerName, INTERNET_PORT nServerPort, LPCWSTR lpszUserName, LPCWSTR lpszPassword, DWORD dwService, DWORD dwFlags, DWORD_PTR dwContext);
 int WINAPI hook_getaddrinfo(PCSTR pNodeName, PCSTR pServiceName, const ADDRINFO* pHints, PADDRINFOA* ppResult);
 int WSAAPI hook_connect(SOCKET s, const sockaddr* name, int namelen);
+
+//ole32
+HRESULT __stdcall hook_CoRegisterClassObject(REFCLSID rclsid, LPUNKNOWN pUnk, CLSCTX dwClsContext, DWORD flags, LPDWORD lpdwRegister);
+HRESULT __stdcall hook_CoCreateInstance(REFCLSID rclsid, LPUNKNOWN pUnkOuter, CLSCTX dwClsContext, REFIID riid, LPVOID* ppv);
 
 LSTATUS WINAPI hook_RegQueryValueExW(HKEY hkey, LPCWSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData);
 BOOL WINAPI hook_InternetCrackUrlW(LPCWSTR lpszUrl, DWORD dwUrlLength, DWORD dwFlags, LPURL_COMPONENTSW lpUrlComponents);
