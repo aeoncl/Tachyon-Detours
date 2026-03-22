@@ -72,7 +72,17 @@ void WINAPI ImportMe() {}
 
 
 void SetupLogger() {
-    LOGGER = new Logger("C:\\temp\\all.log", true);
+
+    char processPath[MAX_PATH] = {};
+    GetModuleFileNameA(nullptr, processPath, MAX_PATH);
+    char* processName = strrchr(processPath, '\\');
+    processName = processName ? processName + 1 : processPath;
+
+    std::string logPath("C:\\temp\\zathras-");
+    logPath.append(processName);
+    logPath.append(".log");
+
+    LOGGER = new Logger(logPath.c_str(), true);
 }
 
 void Cleanup() {
@@ -394,22 +404,27 @@ LSTATUS handleRegValueStrW(const wchar_t* dataIn, LPBYTE lpData, LPDWORD lpcbDat
 
 HRESULT __stdcall hook_CoRegisterClassObject(REFCLSID rclsid, LPUNKNOWN pUnk, CLSCTX dwClsContext, DWORD flags, LPDWORD lpdwRegister)
 {
-    return og_CoRegisterClassObject(
-        IsEqualCLSID(rclsid, ORIGINAL_CONTACT_CLSID) ? NEW_CONTACT_CLSID : rclsid,
-        pUnk,
-        dwClsContext,
-        flags,
-        lpdwRegister);
+    if (IsEqualCLSID(rclsid, ORIGINAL_CONTACT_CLSID))
+    {
+        LOGGER->LogLine(L"CoRegisterClassObject: Redirecting ORIGINAL_CONTACT_CLSID -> NEW_CONTACT_CLSID");
+        return og_CoRegisterClassObject(NEW_CONTACT_CLSID, pUnk, dwClsContext, flags, lpdwRegister);
+    }
+
+    LOGGER->LogLine(L"CoRegisterClassObject: Passing through unmanaged CLSID");
+    return og_CoRegisterClassObject(rclsid, pUnk, dwClsContext, flags, lpdwRegister);
 }
 
 HRESULT __stdcall hook_CoCreateInstance(REFCLSID rclsid, LPUNKNOWN pUnkOuter, CLSCTX dwClsContext, REFIID riid, LPVOID* ppv)
 {
-    return og_CoCreateInstance(IsEqualCLSID(rclsid, ORIGINAL_CONTACT_CLSID) ? NEW_CONTACT_CLSID : rclsid,
-        pUnkOuter,
-        dwClsContext,
-        riid,
-        ppv
-    );
+    if (IsEqualCLSID(rclsid, ORIGINAL_CONTACT_CLSID))
+    {
+        LOGGER->LogLine("CoCreateInstance: Redirecting ORIGINAL_CONTACT_CLSID -> NEW_CONTACT_CLSID");
+        HRESULT result = og_CoCreateInstance(NEW_CONTACT_CLSID, pUnkOuter, dwClsContext, riid, ppv);
+        LOGGER->LogLine("CoCreateInstance: Result hr=0x%08X", result);
+        return result;
+    }
+
+    return og_CoCreateInstance(rclsid, pUnkOuter, dwClsContext, riid, ppv);
 }
 
 //hi ani :D
