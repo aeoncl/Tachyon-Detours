@@ -414,12 +414,6 @@ LSTATUS handleRegValueStrW(const wchar_t* dataIn, LPBYTE lpData, LPDWORD lpcbDat
 LSTATUS WINAPI hook_RegQueryValueExW(HKEY hkey, LPCWSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData)
 {
     //LOGGER->Log(L"RegQueryValueExW: lpValueName: %s lpType: isNull: %d lpData isNull: %d lpcbData isNull: %d", lpValueName, lpType == nullptr, lpData == nullptr, lpcbData == nullptr);
-    LSTATUS result = og_RegQueryValueExW(hkey, lpValueName, lpReserved, lpType, lpData, lpcbData);
-
-    if (result != ERROR_SUCCESS) {
-        return result;
-    }
-
     if (lpValueName != nullptr) {
         if (wcscmp(lpValueName, L"ppstshost") == 0) {
             return handleRegValueStrW(OVERRIDE_URL_W, lpData, lpcbData);
@@ -428,7 +422,7 @@ LSTATUS WINAPI hook_RegQueryValueExW(HKEY hkey, LPCWSTR lpValueName, LPDWORD lpR
             return handleRegValueStrW(L"http://127.0.0.1:8080/PPCRLconfig.srf", lpData, lpcbData);
         }
     }
-    return result;
+    return og_RegQueryValueExW(hkey, lpValueName, lpReserved, lpType, lpData, lpcbData);
 }
 
 HRESULT __stdcall hook_GetWebAuthUrlEx(VOID* hExternalIdentity, IDCRL_WEBAUTHOPTION dwFlags, LPCWSTR szTargetServiceUrl, LPCWSTR wszServicePolicy, LPCWSTR wszAdditionalPostParams, LPCWSTR* pszSHA1UrlOut, LPCWSTR* pszSHA1PostDataOut)
