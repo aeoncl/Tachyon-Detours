@@ -12,6 +12,11 @@ typedef HINTERNET(WINAPI* HttpOpenRequestA_type)(HINTERNET hConnect, LPCSTR lpsz
 typedef HINTERNET(WINAPI* HttpOpenRequestW_type)(HINTERNET hConnect, LPCWSTR lpszVerb, LPCWSTR lpszObjectName, LPCWSTR lpszVersion, LPCWSTR lpszReferrer, LPCWSTR* lplpszAcceptTypes, DWORD dwFlags, DWORD_PTR dwContext);
 typedef HINTERNET(WINAPI* InternetConnectA_type)(HINTERNET hInternet, LPCSTR lpszServerName, INTERNET_PORT nServerPort, LPCSTR lpszUserName, LPCSTR lpszPassword, DWORD dwService, DWORD dwFlags, DWORD_PTR dwContext);
 typedef HINTERNET(WINAPI* InternetConnectW_type)(HINTERNET hInternet, LPCWSTR lpszServerName, INTERNET_PORT nServerPort, LPCWSTR lpszUserName, LPCWSTR lpszPassword, DWORD dwService, DWORD dwFlags, DWORD_PTR dwContext);
+typedef HINTERNET(WINAPI* InternetSetOptionA_type)(HINTERNET hInternet, DWORD dwOption, LPVOID lpBuffer, DWORD lpdwBufferLength);
+typedef HINTERNET(WINAPI* InternetSetOptionW_type)(HINTERNET hInternet, DWORD dwOption, LPVOID lpBuffer, DWORD lpdwBufferLength);
+typedef HINTERNET(WINAPI* InternetQueryOptionA_type)(HINTERNET hInternet, DWORD dwOption, LPVOID lpBuffer, LPDWORD lpdwBufferLength);
+typedef HINTERNET(WINAPI* InternetQueryOptionW_type)(HINTERNET hInternet, DWORD dwOption, LPVOID lpBuffer, LPDWORD lpdwBufferLength);
+
 typedef BOOL(WINAPI* InternetCrackUrlW_type)(LPCWSTR lpszUrl, DWORD dwUrlLength, DWORD dwFlags, LPURL_COMPONENTSW lpUrlComponents);
 //WS2tcpip
 typedef int(WINAPI* getaddrinfo_type)(PCSTR, PCSTR, const ADDRINFOA*, PADDRINFOA*);
@@ -40,3 +45,4 @@ void Hook();
 void Unhook();
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved);
 void WINAPI ImportMe();
+void DumpRawMemory(DWORD_PTR dwContext, SIZE_T dumpSize);

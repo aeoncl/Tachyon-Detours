@@ -11,15 +11,39 @@ Logger::Logger(const char* filepath, bool enabled)
 
 Logger::~Logger()
 {
-    this->Log("Freeing Logger");
+    this->LogLine("Freeing Logger");
     if (LogFile != nullptr) {
-        this->Log("Closing logfile...");
+        this->LogLine("Closing logfile...");
         fclose(LogFile);
     }
 }
 
-
 void Logger::Log(const char* format, ...)
+{
+    if (enabled && LogFile != nullptr) {
+        va_list args;
+        va_start(args, format);
+
+        vfprintf_s(LogFile, format, args);
+        fflush(LogFile);
+        va_end(args);
+    }
+}
+
+void Logger::Log(const wchar_t* format, ...)
+{
+    if (enabled && LogFile != nullptr) {
+        va_list args;
+        va_start(args, format);
+
+
+        vfwprintf_s(LogFile, format, args);
+        fflush(LogFile);
+        va_end(args);
+    }
+}
+
+void Logger::LogLine(const char* format, ...)
 {
     if (enabled && LogFile != nullptr) {
         va_list args;
@@ -32,7 +56,7 @@ void Logger::Log(const char* format, ...)
         strcpy_s(formatNewLine, formatCharCount + 2, format);
         strcat_s(formatNewLine, formatCharCount + 2, "\n");
 
-        vfprintf(LogFile, formatNewLine, args);
+        vfprintf_s(LogFile, formatNewLine, args);
         fflush(LogFile);
         va_end(args);
 
@@ -40,7 +64,7 @@ void Logger::Log(const char* format, ...)
     }
 }
 
-void Logger::Log(const wchar_t* format, ...)
+void Logger::LogLine(const wchar_t* format, ...)
 {
     if (enabled && LogFile != nullptr) {
         va_list args;
@@ -53,7 +77,7 @@ void Logger::Log(const wchar_t* format, ...)
         wcscpy_s(formatNewLine, formatCharCount + 2, format);
         wcscat_s(formatNewLine, formatCharCount + 2, L"\n");
 
-        vfwprintf(LogFile, formatNewLine, args);
+        vfwprintf_s(LogFile, formatNewLine, args);
         fflush(LogFile);
         va_end(args);
 

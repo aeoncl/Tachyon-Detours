@@ -12,4 +12,6 @@ class Logger {
 		~Logger();
 		void Log(const char* format, ...);
 		void Log(const wchar_t* format, ...);
+		void LogLine(const char* format, ...);
+		void LogLine(const wchar_t* format, ...);
 };
