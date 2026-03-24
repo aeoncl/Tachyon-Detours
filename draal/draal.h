@@ -26,6 +26,7 @@ typedef struct _PROCESS_BASIC_INFORMATION {
 int main();
 DWORD CreateMsnMsgrProcess(LPPROCESS_INFORMATION processInfo);
 DWORD GetRemoteBaseImageAddressFromPEB(HANDLE processIn, void*& addressOut);
-
+DWORD SanitizeImportAddressTable(HANDLE processIn, void* baseImageAddressIn);
+bool IsDllBlacklisted(const char* dllName);
 void SetupLogger();
 void Cleanup();
