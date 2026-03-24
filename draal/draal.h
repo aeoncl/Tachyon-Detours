@@ -23,10 +23,11 @@ typedef struct _PROCESS_BASIC_INFORMATION {
     ULONG InheritedFromUniqueProcessId;
 } PROCESS_BASIC_INFORMATION, * PPROCESS_BASIC_INFORMATION;
 
-int main();
+int main(int argc, char* argv[]);
 DWORD CreateMsnMsgrProcess(LPPROCESS_INFORMATION processInfo);
 DWORD GetRemoteBaseImageAddressFromPEB(HANDLE processIn, void*& addressOut);
 DWORD SanitizeImportAddressTable(HANDLE processIn, void* baseImageAddressIn);
+DWORD InjectLibrary(HANDLE processIn, LPCSTR dllName);
 bool IsDllBlacklisted(const char* dllName);
 void SetupLogger();
 void Cleanup();

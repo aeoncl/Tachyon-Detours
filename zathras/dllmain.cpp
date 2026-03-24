@@ -4,7 +4,7 @@
 #include <string.h>
 #include <detours.h>
 #pragma comment(lib, "detours")
-//For ntoa TODO remove
+//For ntoa
 #pragma comment(lib, "Ws2_32.lib")
 #pragma comment(lib, "Ole32.lib")
 

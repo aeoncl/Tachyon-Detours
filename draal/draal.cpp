@@ -6,20 +6,22 @@
 #include <windows.h>
 #include "logger.h"
 #include "draal.h"
+#include <detours.h>
 #include <vector>
+#pragma comment(lib, "detours")
 
 
 Logger* LOGGER = nullptr;
 
 const char* DLL_BLACKLIST[] = {
 	"escargot.dll",
-	"crosstalk.dll",
+	"reroute.dll",
 	"zathras.dll",
 	NULL
 };
 
 
-int main()
+int main(int argc, char* argv[])
 {
 	SetupLogger();
 
@@ -49,7 +51,15 @@ int main()
 		CloseHandle(processInfo.hProcess);
 		CloseHandle(processInfo.hThread);
 		Cleanup();
-		return baseImageAddressResult;
+		return sanitizeIATResult;
+	}
+
+	DWORD injectResult = InjectLibrary(processInfo.hProcess, "zathras.dll");
+	if (injectResult != ERROR_SUCCESS) {
+		CloseHandle(processInfo.hProcess);
+		CloseHandle(processInfo.hThread);
+		Cleanup();
+		return injectResult;
 	}
 
 
@@ -62,6 +72,8 @@ int main()
 		return resumeResult;
 	}
 
+
+
 	//TODO inject our dll with detours
 	//TODO start tachyon
 
@@ -73,9 +85,6 @@ int main()
 
 	return EXIT_SUCCESS;
 }
-
-
-
 
 DWORD CreateMsnMsgrProcess(LPPROCESS_INFORMATION processInfo) {
 	STARTUPINFOA startupInfo = {};
@@ -172,8 +181,8 @@ DWORD SanitizeImportAddressTable(HANDLE processIn, void* baseImageAddressIn) {
 			break;
 
 		char dllName[256] = {};
-		void* name_addr = (char*)baseImageAddressIn + currentImportDescriptor.Name;
-		BOOL readDllNameResult = ReadProcessMemory(processIn, name_addr, dllName, sizeof(dllName) - 1, NULL);
+		void* dllNameAddress = (char*)baseImageAddressIn + currentImportDescriptor.Name;
+		BOOL readDllNameResult = ReadProcessMemory(processIn, dllNameAddress, dllName, sizeof(dllName) - 1, NULL);
 		if (!readDllNameResult) {
 			DWORD error = GetLastError();
 			LOGGER->LogLine("Fatal: Could not read DllName in Import Descriptor. ReadProcessMemory failed with error: 0x%x", error);
@@ -200,11 +209,22 @@ DWORD SanitizeImportAddressTable(HANDLE processIn, void* baseImageAddressIn) {
 
 				void* nextDescriptorAddress = (char*)currentImportDescriptorAddress + sizeof(IMAGE_IMPORT_DESCRIPTOR);
 				std::vector<BYTE> buffer(remainingBytes);
-				ReadProcessMemory(processIn, nextDescriptorAddress, buffer.data(), remainingBytes, NULL);
+				BOOL readRemainingImageDataDirectoryResult = ReadProcessMemory(processIn, nextDescriptorAddress, buffer.data(), remainingBytes, NULL);
+				if (!readRemainingImageDataDirectoryResult) {
+					DWORD error = GetLastError();
+					LOGGER->LogLine("Fatal: Could not read remaining Image Data Directory to shift. ReadProcessMemory failed with error: 0x%x", error);
+					return error;
+				}
 
 				LOGGER->LogLine("Buffer size %d...", buffer.size());
 
-				WriteProcessMemory(processIn, currentImportDescriptorAddress, buffer.data(), remainingBytes, NULL);
+				BOOL writeRemainingImageDataDirectoryResult = WriteProcessMemory(processIn, currentImportDescriptorAddress, buffer.data(), remainingBytes, NULL);
+				if (!writeRemainingImageDataDirectoryResult) {
+					DWORD error = GetLastError();
+					LOGGER->LogLine("Fatal: Could not write remaining Image Data Directory to shift. WriteProcessMemory failed with error: 0x%x", error);
+					return error;
+				}
+
 				//Replay current offset because we shifted
 				continue;
 			}
@@ -221,6 +241,19 @@ DWORD SanitizeImportAddressTable(HANDLE processIn, void* baseImageAddressIn) {
 	return ERROR_SUCCESS;
 }
 
+DWORD InjectLibrary(HANDLE processIn, LPCSTR dllName) {
+
+	LOGGER->LogLine("Injecting DLL: %s...", dllName);
+
+	BOOL result = DetourUpdateProcessWithDll(processIn, &dllName, 1);
+	if (!result) {
+		DWORD error = GetLastError();
+		LOGGER->LogLine("Fatal: Could not inject %s in process. DetourUpdateProcessWithDll failed with error: 0x%x", dllName, error);
+		return error;
+	}
+
+	return ERROR_SUCCESS;
+}
 
 
 bool IsDllBlacklisted(const char* dllName) {
@@ -244,8 +277,6 @@ void SetupLogger() {
 	LOGGER->LogLine("         | | | | | |");
 	LOGGER->LogLine("         | | | | | |     DRAAL");
 	LOGGER->LogLine("          V   V   V");
-
-
 }
 
 void Cleanup() {

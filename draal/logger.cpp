@@ -4,7 +4,7 @@
 Logger::Logger(const char* filepath, bool enabled)
 {
     if (enabled) {
-        LogFile = _fsopen(filepath, "a+", _SH_DENYWR);
+        LogFile = _fsopen(filepath, "w+", _SH_DENYWR);
         this->enabled = enabled;
     }
 }
