@@ -5,6 +5,7 @@ They are made to be compatible with other third party servers.
 ## Components
  - **Zathras**: DLL that allows msnmsgr.exe & wlcomm.exe to connect to Tachyon
  - **Draal**: EXE bootstrapper
+ - **Epsilon3**: DLL that starts and stop the server using the clients lifecycle
 
 ## Zathras
 Zathras is the backbone of Tachyon.
@@ -28,12 +29,18 @@ It disarms the client and allows it to connect to local servers.
 ```
 
 ## Draal
-Draal is a WIP exe that will start and monitor both msnmsgr.exe and Tachyon.exe
+Draal is the first stage, it crates the process and modify it's import table.
 
 ### Features
-- [ ] msnmsgr.exe import table patch
-- [ ] tachyon.exe start
-- [ ] Monitoring
+- [x] EXE import table patch
+- [ ] config file
+
+## Epsilon3
+Small DLL that handles starting and stopping the server with the client.
+
+### Features
+- [x] Manage one instance of the server
+- [ ] Select free ports and write them to a file
 
 ## Building
 
