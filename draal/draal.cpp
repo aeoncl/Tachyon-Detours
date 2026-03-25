@@ -5,7 +5,6 @@
 #include "logger.h"
 #include "draal.h"
 #include <detours.h>
-#include <vector>
 #pragma comment(lib, "detours")
 
 
@@ -18,20 +17,20 @@ const char* DLL_BLACKLIST[] = {
 
 
 Logger* LOGGER = nullptr;
-PROCESS_INFORMATION mainProcessInfo = {};
+PROCESS_INFORMATION PROCESS_INFO = {};
 
 int main(int argc, char* argv[])
 {
 	SetupLogger();
 
-	DWORD createMainProcessResult = CreateSuspendedProcess("msnmsgr.exe", mainProcessInfo);
+	DWORD createMainProcessResult = CreateSuspendedProcess("msnmsgr.exe", PROCESS_INFO);
 	if (createMainProcessResult != ERROR_SUCCESS) {
 		Cleanup();
 		return createMainProcessResult;
 	}
 
 	void* baseImageAddress = nullptr;
-	DWORD baseImageAddressResult = GetRemoteBaseImageAddressFromPEB(mainProcessInfo.hProcess, baseImageAddress);
+	DWORD baseImageAddressResult = GetRemoteBaseImageAddressFromPEB(PROCESS_INFO.hProcess, baseImageAddress);
 	if (baseImageAddressResult != ERROR_SUCCESS) {
 		Cleanup();
 		return baseImageAddressResult;
@@ -39,19 +38,19 @@ int main(int argc, char* argv[])
 
 	LOGGER->LogLine("Got base Image Addr: 0x%x", baseImageAddress);
 
-	DWORD sanitizeIATResult = SanitizeImportAddressTable(mainProcessInfo.hProcess, baseImageAddress);
+	DWORD sanitizeIATResult = SanitizeImportAddressTable(PROCESS_INFO.hProcess, baseImageAddress);
 	if (baseImageAddressResult != ERROR_SUCCESS) {
 		Cleanup();
 		return sanitizeIATResult;
 	}
 
-	DWORD injectResult = InjectLibrary(mainProcessInfo.hProcess, "zathras.dll");
+	DWORD injectResult = InjectLibrairies(PROCESS_INFO.hProcess, {"epsilon3.dll", "zathras.dll"});
 	if (injectResult != ERROR_SUCCESS) {
 		Cleanup();
 		return injectResult;
 	}
 
-	DWORD resumeResult = ResumeThread(mainProcessInfo.hThread);
+	DWORD resumeResult = ResumeThread(PROCESS_INFO.hThread);
 	if (resumeResult == -1) {
 		LOGGER->LogLine("Fatal: Failed to ResumeThread: 0x%x", GetLastError());
 		Cleanup();
@@ -217,14 +216,18 @@ DWORD SanitizeImportAddressTable(HANDLE processIn, void* baseImageAddressIn) {
 	return ERROR_SUCCESS;
 }
 
-DWORD InjectLibrary(HANDLE processIn, LPCSTR dllName) {
+DWORD InjectLibrairies(HANDLE processIn, std::vector<LPCSTR> dllNames) {
 
-	LOGGER->LogLine("Injecting DLL: %s...", dllName);
+	std::vector<LPCSTR> ptrs;
+	for (const auto& dll : dllNames) {
+		LOGGER->LogLine("Injecting DLL: %s...", dll);
+		ptrs.push_back(dll);
+	}
 
-	BOOL result = DetourUpdateProcessWithDll(processIn, &dllName, 1);
+	BOOL result = DetourUpdateProcessWithDll(processIn, ptrs.data(), ptrs.size());
 	if (!result) {
 		DWORD error = GetLastError();
-		LOGGER->LogLine("Fatal: Could not inject %s in process. DetourUpdateProcessWithDll failed with error: 0x%x", dllName, error);
+		LOGGER->LogLine("Fatal: Could not inject DLLS in process. DetourUpdateProcessWithDll failed with error: 0x%x", error);
 		return error;
 	}
 
@@ -256,8 +259,8 @@ void SetupLogger() {
 }
 
 void Cleanup() {
-	CloseHandle(mainProcessInfo.hProcess);
-	CloseHandle(mainProcessInfo.hThread);
+	CloseHandle(PROCESS_INFO.hProcess);
+	CloseHandle(PROCESS_INFO.hThread);
 
 	if (LOGGER != nullptr) {
 		delete LOGGER;

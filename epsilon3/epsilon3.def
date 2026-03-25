@@ -1,0 +1,4 @@
+LIBRARY "epsilon3"
+
+EXPORTS
+	ImportMe @1
