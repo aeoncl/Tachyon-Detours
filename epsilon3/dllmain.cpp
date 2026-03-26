@@ -145,7 +145,7 @@ DWORD CreateBackgroundProcess(LPCSTR processNameIn, PROCESS_INFORMATION& process
         NULL,
         NULL,
         FALSE,
-        CREATE_NEW_PROCESS_GROUP,
+        CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
         NULL,
         NULL,
         &startupInfo,
