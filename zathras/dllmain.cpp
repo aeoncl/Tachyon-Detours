@@ -381,25 +381,44 @@ int WSAAPI hook_connect(SOCKET s, const sockaddr* name, int namelen)
     return result;
 }
 
-LSTATUS handleRegValueStrW(const wchar_t* dataIn, LPBYTE lpData, LPDWORD lpcbData) {
-    size_t newLength = (wcslen(dataIn) + 1) * sizeof(wchar_t);
+LSTATUS handleRegValueStrW(const wchar_t* dataIn, LPBYTE lpData, LPDWORD lpcbData, LPDWORD lpType) {
+    size_t newLengthInBytes = (wcslen(dataIn) + 1) * sizeof(wchar_t);
+    if (lpType != nullptr) {
+        //Always set field type
+        *lpType = REG_SZ;
+    }
 
     if (lpData == nullptr && lpcbData != nullptr) {
-        //Return the length of data;
-        *lpcbData = newLength + 20;
-        LOGGER->LogLine(L"Override reg string length: %d", *lpcbData);
+        //Call queries for length
+        *lpcbData = (DWORD)newLengthInBytes;
         return ERROR_SUCCESS;
     }
     else if (lpData != nullptr && lpcbData != nullptr) {
-        //return data;
-        *lpcbData = newLength;
-        wcscpy_s((wchar_t*)lpData, *lpcbData, dataIn);
-        LOGGER->LogLine(L"Override reg string data: %s", (wchar_t*)lpData);
+        if (*lpcbData < newLengthInBytes) {
+            // Should never happen since we lied on the size in the previous call
+            *lpcbData = (DWORD)newLengthInBytes;
+            return ERROR_MORE_DATA;
+        }
+        *lpcbData = (DWORD)newLengthInBytes;
+        size_t newLengthInChars = newLengthInBytes / sizeof(wchar_t);
+        wcscpy_s((wchar_t*)lpData, newLengthInChars, dataIn);
         return ERROR_SUCCESS;
     }
     else {
         return ERROR_BAD_ARGUMENTS;
     }
+}
+
+LSTATUS WINAPI hook_RegQueryValueExW(HKEY hkey, LPCWSTR lpValueName, LPDWORD lpReserved,
+    LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData)
+{
+    if (lpValueName != nullptr) {
+        if (wcscmp(lpValueName, L"ppstshost") == 0)
+            return handleRegValueStrW(OVERRIDE_URL_W, lpData, lpcbData, lpType);
+        else if (wcscmp(lpValueName, L"RemoteFile") == 0)
+            return handleRegValueStrW(L"http://127.0.0.1:8080/PPCRLconfig.srf", lpData, lpcbData, lpType);
+    }
+    return og_RegQueryValueExW(hkey, lpValueName, lpReserved, lpType, lpData, lpcbData);
 }
 
 HRESULT __stdcall hook_CoRegisterClassObject(REFCLSID rclsid, LPUNKNOWN pUnk, CLSCTX dwClsContext, DWORD flags, LPDWORD lpdwRegister)
@@ -425,21 +444,6 @@ HRESULT __stdcall hook_CoCreateInstance(REFCLSID rclsid, LPUNKNOWN pUnkOuter, CL
     }
 
     return og_CoCreateInstance(rclsid, pUnkOuter, dwClsContext, riid, ppv);
-}
-
-//hi ani :D
-LSTATUS WINAPI hook_RegQueryValueExW(HKEY hkey, LPCWSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData)
-{
-    //LOGGER->Log(L"RegQueryValueExW: lpValueName: %s lpType: isNull: %d lpData isNull: %d lpcbData isNull: %d", lpValueName, lpType == nullptr, lpData == nullptr, lpcbData == nullptr);
-    if (lpValueName != nullptr) {
-        if (wcscmp(lpValueName, L"ppstshost") == 0) {
-            return handleRegValueStrW(OVERRIDE_URL_W, lpData, lpcbData);
-        }
-        else if (wcscmp(lpValueName, L"RemoteFile") == 0) {
-            return handleRegValueStrW(L"http://127.0.0.1:8080/PPCRLconfig.srf", lpData, lpcbData);
-        }
-    }
-    return og_RegQueryValueExW(hkey, lpValueName, lpReserved, lpType, lpData, lpcbData);
 }
 
 HRESULT __stdcall hook_GetWebAuthUrlEx(VOID* hExternalIdentity, IDCRL_WEBAUTHOPTION dwFlags, LPCWSTR szTargetServiceUrl, LPCWSTR wszServicePolicy, LPCWSTR wszAdditionalPostParams, LPCWSTR* pszSHA1UrlOut, LPCWSTR* pszSHA1PostDataOut)
