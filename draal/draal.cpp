@@ -44,7 +44,7 @@ int main(int argc, char* argv[])
 		return sanitizeIATResult;
 	}
 
-	DWORD injectResult = InjectLibrairies(PROCESS_INFO.hProcess, { "epsilon3.dll", "zathras.dll"});
+	DWORD injectResult = InjectLibrairies(PROCESS_INFO.hProcess, { "zathras.dll", "epsilon3.dll"});
 	if (injectResult != ERROR_SUCCESS) {
 		Cleanup();
 		return injectResult;

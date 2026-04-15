@@ -4,6 +4,7 @@
 #include <WS2tcpip.h>
 #include "idcrl.h"
 #include <Ole2.h>
+
 //WinTrust
 typedef long(WINAPI* WinVerifyTrustEx_type)(HWND hwnd, GUID* pgActionID, WINTRUST_DATA* pWinTrustData);
 
@@ -46,7 +47,7 @@ BOOL WINAPI hook_InternetCrackUrlW(LPCWSTR lpszUrl, DWORD dwUrlLength, DWORD dwF
 HRESULT __stdcall hook_GetWebAuthUrlEx (VOID* hExternalIdentity, IDCRL_WEBAUTHOPTION dwFlags, LPCWSTR szTargetServiceUrl, LPCWSTR wszServicePolicy, LPCWSTR wszAdditionalPostParams, LPCWSTR* pszSHA1UrlOut, LPCWSTR* pszSHA1PostDataOut);
 HRESULT __stdcall hook_InitializeExMsid(REFGUID appId, long idclrVersion, UPDATE_FLAG dwflags, IDCRL_OPTION pOptions[], DWORD dwOptions);
 
-
+BOOL SetupConfig();
 void SetupLogger();
 void Cleanup();
 void Hook();

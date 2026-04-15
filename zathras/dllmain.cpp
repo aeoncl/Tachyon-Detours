@@ -3,6 +3,7 @@
 #include "logger.h"
 #include <string.h>
 #include <detours.h>
+#include "config.h"
 #pragma comment(lib, "detours")
 //For ntoa
 #pragma comment(lib, "Ws2_32.lib")
@@ -13,6 +14,7 @@
 
 BOOL Hooked = FALSE;
 Logger *LOGGER = nullptr;
+TachyonConfig config;
 
 static const char* OVERRIDE_URL = "127.0.0.1";
 static const wchar_t* OVERRIDE_URL_W = L"127.0.0.1";
@@ -50,10 +52,13 @@ BOOL APIENTRY DllMain(HMODULE hModule,
     LPVOID lpReserved
 )
 {
+    DWORD configError = ERROR_SUCCESS;
+
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(hModule);
+        SetupConfig();
         SetupLogger();
         Hook();
         break;
@@ -70,19 +75,21 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 
 void WINAPI ImportMe() {}
 
+BOOL SetupConfig() {
+    DWORD configError = ERROR_SUCCESS;
+    Logger* bootstrapLogger = CreateLogger(true);
+    config = TachyonConfig::LoadConfig(bootstrapLogger, configError);
+    if (configError != ERROR_SUCCESS) {
+        bootstrapLogger->LogLine("Error while loading config: %d", configError);
+        delete bootstrapLogger;
+        return FALSE;
+    }
+    delete bootstrapLogger;
+    return TRUE;
+}
 
 void SetupLogger() {
-
-    char processPath[MAX_PATH] = {};
-    GetModuleFileNameA(nullptr, processPath, MAX_PATH);
-    char* processName = strrchr(processPath, '\\');
-    processName = processName ? processName + 1 : processPath;
-
-    std::string logPath("C:\\temp\\zathras-");
-    logPath.append(processName);
-    logPath.append(".log");
-
-    LOGGER = new Logger(logPath.c_str(), true);
+    LOGGER = CreateLogger(config.zathrasLogsEnabled);
 }
 
 void Cleanup() {
@@ -373,7 +380,7 @@ int WSAAPI hook_connect(SOCKET s, const sockaddr* name, int namelen)
 
     if (targetPort == 80) {
         LOGGER->LogLine("connect: redirect microsoft.com TCP Ping to Notification Server");
-        sockaddr_ipv4->sin_port = ntohs(1863);
+        sockaddr_ipv4->sin_port = htons(1863);
     }
     
     int result = og_connect(s, name, namelen);
@@ -462,10 +469,14 @@ HRESULT __stdcall hook_GetWebAuthUrlEx(VOID* hExternalIdentity, IDCRL_WEBAUTHOPT
     newUrl.append(L":");
     newUrl.append(OVERRIDE_WEB_PORT_W);
 
-    if (startPathIndex > 0) {
-        newUrl.append(proxyUrlFilled.substr(startPathIndex, -1));
+    if (startPathIndex != std::wstring::npos) {
+        newUrl.append(proxyUrlFilled.substr(startPathIndex));
     }
 
+    //this is an unchecked copy: if our custom url is bigger than the default pszSHA1UrlOut size, the process will crash.
+    //pszSHA1UrlOut is allocated using a custom heap allocator inside msidcrl40.dll
+    //It would be a pain to try to free it and allocate a new string in the same space
+    //I know that my overidden will always be smaller than the default one, so i'll leave it like this
     wcscpy((wchar_t*)*pszSHA1UrlOut, newUrl.c_str());
     
     LOGGER->LogLine(L"GetWebAuthUrlEx: url: %s postData: %s", *pszSHA1UrlOut, *pszSHA1PostDataOut);
