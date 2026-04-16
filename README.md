@@ -32,16 +32,16 @@ It disarms the client and allows it to connect to local servers.
 Draal is the first stage, it crates the process and modify it's import table.
 
 ### Features
-- [x] EXE import table patch
-- [ ] config file
+- [x] exe import table add imports
+- [x] exe import table remove imports
+- [x] argument passthrough & workdir (for COM invocations) 
+- [x] config file
 
 ## Epsilon3
 Small DLL that handles starting and stopping the server with the client.
 
 ### Features
 - [x] Manage one instance of the server
-- [ ] Select free ports and write them to a file
-
 ## Building
 
 You need Visual Studio 2019 with Windows XP Build Tools (v140) installed and C++ support.
