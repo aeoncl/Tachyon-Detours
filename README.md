@@ -1,7 +1,7 @@
 # Tachyon-Detours
 Detour based utilities to connect WLM 14 to Tachyon
 
-The goal is to be compatible with existing third party servers using static patched binaries
+The goal is to be compatible with existing third party servers that are using static patched binaries
 
 ## Components
  - **Draal**: An executable that starts a process and patches it's import table
