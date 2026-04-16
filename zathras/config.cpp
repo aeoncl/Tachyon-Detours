@@ -2,8 +2,14 @@
 #include "pch.h"
 #include "config.h"
 #include <ShlObj.h>
-#include "SimpleIni.h"
+#include "../libs/SimpleIni.h"
+#include "../libs/directoryUtils.h"
 
+const long DEFAULT_NS_PORT = 1863;
+const long DEFAULT_SB_PORT = 1864;
+const long DEFAULT_HTTP_PORT = 8080;
+const bool DEFAULT_STRICT_SSL = true;
+const bool DEFAULT_ZATHRAS_LOGS_ENABLED = false;
 
 TachyonConfig TachyonConfig::Empty()
 {
@@ -29,20 +35,20 @@ TachyonConfig TachyonConfig::LoadConfig(Logger* LOGGER, DWORD& errorCode)
 	SI_Error loadResult = ini.LoadFile(configPath.c_str());
 	if (loadResult != SI_OK) {
 		LOGGER->LogLine("Could not load config file, using defaults... ErrorCode: 0x%x", loadResult);
-		ini.SetLongValue("server", "notification_port", 1863);
-		ini.SetLongValue("server", "switchboard_port", 1864);
-		ini.SetLongValue("server", "http_port", 8080);
-		ini.SetBoolValue("matrix", "strict_ssl", true);
-		ini.SetBoolValue("zathras_logs", "enabled", false);
+		ini.SetLongValue("server", "notification_port", DEFAULT_NS_PORT);
+		ini.SetLongValue("server", "switchboard_port", DEFAULT_SB_PORT);
+		ini.SetLongValue("server", "http_port", DEFAULT_HTTP_PORT);
+		ini.SetBoolValue("matrix", "strict_ssl", DEFAULT_STRICT_SSL);
+		ini.SetBoolValue("zathras_logs", "enabled", DEFAULT_ZATHRAS_LOGS_ENABLED);
 		ini.SaveFile(configPath.c_str());
 	}
 
 
-	long notificationPort = ini.GetLongValue("server", "notification_port", 1863, false);
-	long switchboardPort = ini.GetLongValue("server", "switchboard_port", 1864, false);
-	long httpPort = ini.GetLongValue("server", "http_port", 8080, false);
-	bool strictSSL = ini.GetBoolValue("matrix", "strict_ssl", true, false);
-	bool logsEnabled = ini.GetBoolValue("zathras_logs", "enabled", false, false);
+	long notificationPort = ini.GetLongValue("server", "notification_port", DEFAULT_NS_PORT, false);
+	long switchboardPort = ini.GetLongValue("server", "switchboard_port", DEFAULT_SB_PORT, false);
+	long httpPort = ini.GetLongValue("server", "http_port", DEFAULT_HTTP_PORT, false);
+	bool strictSSL = ini.GetBoolValue("matrix", "strict_ssl", DEFAULT_STRICT_SSL, false);
+	bool logsEnabled = ini.GetBoolValue("zathras_logs", "enabled", DEFAULT_ZATHRAS_LOGS_ENABLED, false);
 
 	TachyonConfig config;
 	config.notificationServerPort = notificationPort;
@@ -63,48 +69,21 @@ TachyonConfig TachyonConfig::LoadConfig(Logger* LOGGER, DWORD& errorCode)
 
 Logger* CreateLogger(bool enabled)
 {
+	std::string processName = GetProcessName();
 
-		char processPath[MAX_PATH] = {};
-		GetModuleFileNameA(nullptr, processPath, MAX_PATH);
-		char* processName = strrchr(processPath, '\\');
-		processName = processName ? processName + 1 : processPath;
-
-		DWORD logPathError = ERROR_SUCCESS;
-		std::string logPath = ResolveDefaultLogDirectory(logPathError);
-		if (logPathError != ERROR_SUCCESS) {
-			logPath = std::string("C:\\temp");
-		}
-
-		logPath.append("\\zathras-");
-		logPath.append(processName);
-		logPath.append(".log");
-
-		return new Logger(logPath.c_str(), enabled);
-}
-
-std::string ResolveSpecialDirectory(DWORD& errorCode, int csidl, const char* subDirectoryPath)
-{
-	char appdataBuffer[MAX_PATH];
-
-	BOOL result = SHGetSpecialFolderPathA(NULL, appdataBuffer, csidl, false);
-	if (!result) {
-		errorCode = GetLastError();
-		return std::string();
+	DWORD logPathError = ERROR_SUCCESS;
+	std::string logPath = ResolveDefaultLogDirectory(logPathError);
+	if (logPathError != ERROR_SUCCESS) {
+		logPath = std::string("C:\\temp");
 	}
 
-	std::string specialDirectoryPath(appdataBuffer);
-	specialDirectoryPath.append("\\");
-	specialDirectoryPath.append(subDirectoryPath);
+	logPath.append("\\zathras-");
+	logPath.append(processName);
+	logPath.append(".log");
 
-	DWORD ensureDirectoryExistsError = ERROR_SUCCESS;
-	bool ensureDirectoryResult = EnsureDirectoryExists(specialDirectoryPath, ensureDirectoryExistsError);
-	if (!ensureDirectoryResult) {
-		errorCode = ensureDirectoryExistsError;
-		return std::string();
-	}
-
-	return specialDirectoryPath;
+	return new Logger(logPath.c_str(), enabled);
 }
+
 
 std::string ResolveConfigDirectory(DWORD &errorCode)
 {
@@ -114,45 +93,4 @@ std::string ResolveConfigDirectory(DWORD &errorCode)
 std::string ResolveDefaultLogDirectory(DWORD& errorCode)
 {
 	return ResolveSpecialDirectory(errorCode, CSIDL_APPDATA, "Tachyon");
-}
-
-bool PathExists(const std::string& path)
-{
-    return GetFileAttributesA(path.c_str()) != INVALID_FILE_ATTRIBUTES;
-}
-
-std::string GetParentDirectory(const std::string& path)
-{
-	size_t slashPos = path.find_last_of("\\/");
-	if (slashPos == std::string::npos)
-		return std::string();
-	return path.substr(0, slashPos);
-}
-
-bool IsDirectory(const std::string& path)
-{
-    DWORD attrs = GetFileAttributesA(path.c_str());
-    return (attrs != INVALID_FILE_ATTRIBUTES) && (attrs & FILE_ATTRIBUTE_DIRECTORY);
-}
-
-bool EnsureDirectoryExists(const std::string& path, DWORD& errorCode)
-{
-	if (IsDirectory(path))
-		return true;
-
-	std::string parent = GetParentDirectory(path);
-	if (!parent.empty() && !EnsureDirectoryExists(parent, errorCode))
-		return false;
-
-	if (!CreateDirectoryA(path.c_str(), NULL))
-	{
-		DWORD err = GetLastError();
-		if (err != ERROR_ALREADY_EXISTS)
-		{
-			errorCode = err;
-			return false;
-		}
-	}
-
-	return true;
 }

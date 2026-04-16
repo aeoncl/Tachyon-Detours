@@ -2,28 +2,30 @@
 
 #include <iostream>
 #include <windows.h>
-#include "logger.h"
+#include "../libs/logger.h"
+#include "../libs/directoryUtils.h"
 #include "draal.h"
 #include <detours.h>
+#include "config.h"
 #pragma comment(lib, "detours")
-
-
-const char* DLL_BLACKLIST[] = {
-	"escargot.dll",
-	"reroute.dll",
-	"zathras.dll",
-	NULL
-};
-
 
 Logger* LOGGER = nullptr;
 PROCESS_INFORMATION PROCESS_INFO = {};
 
 int main(int argc, char* argv[])
 {
-	SetupLogger();
+	Logger* bootstrapLogger = CreateLogger(true, "init");
+	DWORD configError = ERROR_SUCCESS;
+	DraalConfig config = DraalConfig::LoadConfig(bootstrapLogger, configError);
+	if (configError != ERROR_SUCCESS) {
+		bootstrapLogger->LogLine("Failed to load config: %d", configError);
+		return configError;
+	}
+	delete bootstrapLogger;
 
-	DWORD createMainProcessResult = CreateSuspendedProcess("msnmsgr.exe", PROCESS_INFO);
+	SetupLogger(config.loggingEnabled, config.targetExecutable.c_str());
+
+	DWORD createMainProcessResult = CreateSuspendedProcess(config.targetExecutable.c_str(), PROCESS_INFO, argc, argv);
 	if (createMainProcessResult != ERROR_SUCCESS) {
 		Cleanup();
 		return createMainProcessResult;
@@ -38,13 +40,13 @@ int main(int argc, char* argv[])
 
 	LOGGER->LogLine("Got base Image Addr: 0x%x", baseImageAddress);
 
-	DWORD sanitizeIATResult = SanitizeImportAddressTable(PROCESS_INFO.hProcess, baseImageAddress);
+	DWORD sanitizeIATResult = SanitizeImportAddressTable(PROCESS_INFO.hProcess, baseImageAddress, config.dllsToRemove);
 	if (baseImageAddressResult != ERROR_SUCCESS) {
 		Cleanup();
 		return sanitizeIATResult;
 	}
 
-	DWORD injectResult = InjectLibrairies(PROCESS_INFO.hProcess, { "zathras.dll", "epsilon3.dll"});
+	DWORD injectResult = InjectLibrairies(PROCESS_INFO.hProcess, config.dllsToInject);
 	if (injectResult != ERROR_SUCCESS) {
 		Cleanup();
 		return injectResult;
@@ -61,30 +63,46 @@ int main(int argc, char* argv[])
 	return EXIT_SUCCESS;
 }
 
-DWORD CreateSuspendedProcess(LPCSTR processNameIn, PROCESS_INFORMATION& processInfoOut) {
+DWORD CreateSuspendedProcess(LPCSTR processNameIn, PROCESS_INFORMATION& processInfoOut, int argc, char* argv[]) {
+	std::string exeDir = GetProcessDirectory();
+	std::string targetPath = exeDir + processNameIn;
+
+	std::string commandLine = "\"" + targetPath + "\"";
+	for (int i = 1; i < argc; i++) {
+		commandLine += " ";
+		commandLine += "\"";
+		commandLine += argv[i];
+		commandLine += "\"";
+	}
+
+	LOGGER->LogLine("Command line args to passthrough: %s", commandLine.c_str());
+
+	std::vector<char> commandLineBuffer(commandLine.begin(), commandLine.end());
+	commandLineBuffer.push_back('\0');
+
 	STARTUPINFOA startupInfo = {};
 	startupInfo.cb = sizeof(STARTUPINFOA);
 
 	BOOL result = CreateProcessA(
-		processNameIn,
-		NULL,
+		targetPath.c_str(),
+		commandLine.empty() ? NULL : commandLineBuffer.data(),
 		NULL,
 		NULL,
 		FALSE,
 		CREATE_SUSPENDED,
 		NULL,
-		NULL,
+		exeDir.c_str(),
 		&startupInfo,
 		&processInfoOut
 	);
 
 	if (!result) {
 		DWORD error = GetLastError();
-		LOGGER->LogLine("Could not create msnmsgr.exe process. Error Code: 0x%x", error);
+		LOGGER->LogLine("Could not create %s process. Error Code: 0x%x", processNameIn,  error);
 		return error;
 	}
 
-	LOGGER->LogLine("msnmsgr.exe started suspended (pid %lu)", processInfoOut.dwProcessId);
+	LOGGER->LogLine("%s started suspended (pid %lu)",processNameIn, processInfoOut.dwProcessId);
 	return ERROR_SUCCESS;
 }
 
@@ -115,7 +133,7 @@ DWORD GetRemoteBaseImageAddressFromPEB(HANDLE processIn, void*& baseImageAddress
 	return ERROR_SUCCESS;
 }
 
-DWORD SanitizeImportAddressTable(HANDLE processIn, void* baseImageAddressIn) {
+DWORD SanitizeImportAddressTable(HANDLE processIn, void* baseImageAddressIn, const std::vector<std::string>& dllsToRemove) {
 	IMAGE_DOS_HEADER dos_header;
 	BOOL readDosResult = ReadProcessMemory(processIn, baseImageAddressIn, &dos_header, sizeof(dos_header), NULL);
 	if (!readDosResult) {
@@ -164,7 +182,7 @@ DWORD SanitizeImportAddressTable(HANDLE processIn, void* baseImageAddressIn) {
 			return error;
 		}
 
-		if (IsDllBlacklisted(dllName)) {
+		if (IsDllBlacklisted(dllName, dllsToRemove)) {
 			LOGGER->LogLine("Stripping DLL: %s imageDataDirectorySize: %d passedCount: %d", dllName, imageDataDirectory.Size, passedCount);
 
 			DWORD imageDataDirectoryCount = imageDataDirectory.Size / sizeof(IMAGE_IMPORT_DESCRIPTOR);
@@ -216,12 +234,12 @@ DWORD SanitizeImportAddressTable(HANDLE processIn, void* baseImageAddressIn) {
 	return ERROR_SUCCESS;
 }
 
-DWORD InjectLibrairies(HANDLE processIn, std::vector<LPCSTR> dllNames) {
+DWORD InjectLibrairies(HANDLE processIn, const std::vector<std::string>& dllNames) {
 
 	std::vector<LPCSTR> ptrs;
 	for (const auto& dll : dllNames) {
-		LOGGER->LogLine("Injecting DLL: %s...", dll);
-		ptrs.push_back(dll);
+		LOGGER->LogLine("Injecting DLL: %s...", dll.c_str());
+		ptrs.push_back(dll.c_str());
 	}
 
 	BOOL result = DetourUpdateProcessWithDll(processIn, ptrs.data(), ptrs.size());
@@ -235,17 +253,17 @@ DWORD InjectLibrairies(HANDLE processIn, std::vector<LPCSTR> dllNames) {
 }
 
 
-bool IsDllBlacklisted(const char* dllName) {
-	for (int i = 0; DLL_BLACKLIST[i] != NULL; i++) {
-		if (_stricmp(dllName, DLL_BLACKLIST[i]) == 0)
+bool IsDllBlacklisted(const char* dllName, const std::vector<std::string>& dllsToRemove) {
+	for (const auto& dllToRemove : dllsToRemove) {
+		if (_stricmp(dllName, dllToRemove.c_str()) == 0)
 			return true;
 	}
 	return false;
 }
 
 
-void SetupLogger() {
-	LOGGER = new Logger("C:\\temp\\draal.txt", true);
+void SetupLogger(bool enabled, const char* name) {
+	LOGGER = CreateLogger(enabled, name);
 
 	LOGGER->LogLine("          A   A   A");
 	LOGGER->LogLine("         | | | | | |");

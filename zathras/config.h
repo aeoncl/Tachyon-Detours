@@ -1,6 +1,6 @@
 #pragma once
 #include <string>
-#include "logger.h"
+#include "../libs/logger.h"
 
 class TachyonConfig {
 public:
@@ -15,11 +15,6 @@ public:
 
 };
 
-Logger* CreateLogger(bool enabled);
-std::string ResolveSpecialDirectory(DWORD& errorCode, int csidl, const char* subDirectoryPath);
-std::string ResolveConfigDirectory(DWORD &errorCode);
+std::string ResolveConfigDirectory(DWORD& errorCode);
 std::string ResolveDefaultLogDirectory(DWORD& errorCode);
-std::string GetParentDirectory(const std::string& path);
-bool PathExists(const std::string& path);
-bool IsDirectory(const std::string& path);
-bool EnsureDirectoryExists(const std::string& path, DWORD& errorCode);
+Logger* CreateLogger(bool enabled);

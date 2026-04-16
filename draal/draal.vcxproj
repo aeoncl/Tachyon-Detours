@@ -142,12 +142,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="config.cpp" />
     <ClCompile Include="draal.cpp" />
-    <ClCompile Include="logger.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="config.h" />
     <ClInclude Include="draal.h" />
-    <ClInclude Include="logger.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>

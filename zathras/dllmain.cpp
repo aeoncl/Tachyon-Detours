@@ -1,6 +1,6 @@
 #include "pch.h"
 #include "dllmain.h"
-#include "logger.h"
+#include "../libs/logger.h"
 #include <string.h>
 #include <detours.h>
 #include "config.h"

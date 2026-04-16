@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "dllmain.h"
-#include "logger.h"
 #include <Psapi.h>
+#include "../libs/directoryUtils.h"
 #pragma comment(lib, "psapi.lib")
 
 Logger* LOGGER = NULL;
@@ -60,9 +60,33 @@ void OnDetach() {
     Cleanup();
 }
 
+Logger* CreateLogger(bool enabled)
+{
+    std::string processName = GetProcessName();
+
+    DWORD logPathError = ERROR_SUCCESS;
+    std::string logPath = ResolveDefaultLogDirectory(logPathError);
+    if (logPathError != ERROR_SUCCESS) {
+        logPath = std::string("C:\\temp");
+    }
+
+    logPath.append("\\epsilon3-");
+    logPath.append(processName);
+    logPath.append(".log");
+
+    return new Logger(logPath.c_str(), enabled);
+}
+
+std::string ResolveDefaultLogDirectory(DWORD& errorCode)
+{
+    return ResolveSpecialDirectory(errorCode, CSIDL_APPDATA, "Tachyon");
+}
+
+
 void SetupLogger() {
     if (LOGGER == NULL) {
-        LOGGER = new Logger("C:\\temp\\epsilon3.txt", true);
+        //TODO load enableLogs from tachyon.ini
+        LOGGER = CreateLogger(true);
     }
 }
 
