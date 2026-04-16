@@ -1,11 +1,23 @@
 # Tachyon-Detours
-Detour based utilities to connect WLM 14 to Tachyon.
-They are made to be compatible with other third party servers.
+Detour based utilities to connect WLM 14 to Tachyon
+The goal is to be compatible with existing third party servers using static patched binaries
 
 ## Components
- - **Zathras**: DLL that allows msnmsgr.exe & wlcomm.exe to connect to Tachyon
- - **Draal**: EXE runtime patcher, injects & remove dlls from exe import table
- - **Epsilon3**: DLL that manages a single instance of the server using the clients lifecycle (start & stop)
+ - **Draal**: An executable that starts a process and patches it's import table
+ - **Zathras**: A rerouting DLL that makes the client connect to our server, amongst other things
+ - **Epsilon3**: A DLL that manages one instance of the server (starting and stopping) tied to the clients lifecycle.
+
+## Draal
+Draal creates processes in SUSPENDED mode, and then patches it's import table.
+You can specify in a configuration file which dlls to remove and which to add.
+Draal is compatible with COM invocations since it passes through the working directory of the target process and the command line arguments it receives.
+
+### Features
+- [x] exe import table add imports
+- [x] exe import table remove imports
+- [x] argument passthrough & workdir (for COM invocations) 
+- [x] config file
+
 
 ## Zathras
 Zathras is the backbone of Tachyon.
@@ -13,12 +25,12 @@ It disarms the client and allows it to connect to local servers.
 
 ### Features
 - [X] Signature check bypass for ppcrlbin & msnmsgr.exe
-- [X] msnmsgr.exe firewall check redirect 
-- [X] Disable SSL & redirect to localhost (with exception support)
+- [X] msnmsgr.exe firewall check redirect
+- [X] Disable SSL & redirect to localhost (with whitelist support)
 - [X] ppcrlbin registry URL redirect
 - [X] identityCRL environment patch
-- [X] identityCRL WebAuthUrl redirect 
-- [X] wlmcomm.exe COM Redirect
+- [X] identityCRL WebAuthUrl redirect
+- [X] Contacts COM Server redirection to another CLSID
 
 ```
 - Zathras is Zathras, pronounced Zathras.
@@ -28,20 +40,11 @@ It disarms the client and allows it to connect to local servers.
 - No one listens to Zathras...
 ```
 
-## Draal
-Draal is the first stage, it crates the process and modify it's import table.
-
-### Features
-- [x] exe import table add imports
-- [x] exe import table remove imports
-- [x] argument passthrough & workdir (for COM invocations) 
-- [x] config file
-
 ## Epsilon3
 Small DLL that handles starting and stopping the server with the client.
 
 ### Features
 - [x] Manage one instance of the server
-## Building
 
+## Building
 You need Visual Studio 2019 with Windows XP Build Tools (v140) installed and C++ support.
