@@ -1,5 +1,5 @@
 # Tachyon-Detours
-Detour based utilities to connect WLM 14 to Tachyon
+Detour based utilities to connect WLM 14 to Tachyon.
 The goal is to be compatible with existing third party servers using static patched binaries
 
 ## Components
