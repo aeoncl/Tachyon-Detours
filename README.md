@@ -9,7 +9,7 @@ The goal is to be compatible with existing third party servers that are using st
  - **Epsilon3**: A DLL that manages one instance of the server (starting and stopping) tied to the clients lifecycle.
 
 ## Draal
-Draal creates processes in SUSPENDED mode, and then patches it's import table.
+Draal creates processes in SUSPENDED mode, and then patches their import table.
 You can specify in a configuration file which dlls to remove and which to add.
 Draal is compatible with COM invocations since it passes through the working directory of the target process and the command line arguments it receives.
 
