@@ -162,6 +162,7 @@
     <ClInclude Include="dllmain.h" />
     <ClInclude Include="idcrl.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="shell_helpers.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="config.cpp" />
@@ -172,6 +173,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="shell_helpers.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

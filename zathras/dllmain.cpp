@@ -4,10 +4,12 @@
 #include <string.h>
 #include <detours.h>
 #include "config.h"
+#include "shell_helpers.h"
 #pragma comment(lib, "detours")
 //For ntoa
 #pragma comment(lib, "Ws2_32.lib")
 #pragma comment(lib, "Ole32.lib")
+#pragma comment(lib, "Shell32.lib")
 
 
 #define IGNORE_MAGIC 0xDEADBEEF
@@ -18,8 +20,8 @@ TachyonConfig config;
 
 static const char* OVERRIDE_URL = "127.0.0.1";
 static const wchar_t* OVERRIDE_URL_W = L"127.0.0.1";
-static const char* OVERRIDE_WEB_PORT = "8080";
-static const wchar_t* OVERRIDE_WEB_PORT_W = L"8080";
+
+static int ORIGINAL_NS_PORT = 1863;
 
 static const CLSID ORIGINAL_CONTACT_CLSID = { 0x380689D0,0xAFAA,0x47E6,{0xB8,0x0E,0xA3,0x34,0x36,0xFE,0x31,0x4B} };
 static const CLSID NEW_CONTACT_CLSID = { 0xD86BCC3A,0x303F,0x41C9,{0xAF,0x6B,0x5E,0x30,0xC3,0x8F,0xAF,0x36} };
@@ -36,6 +38,10 @@ InternetQueryOptionA_type og_InternetQueryOptionA = nullptr;
 InternetQueryOptionW_type og_InternetQueryOptionW = nullptr;
 getaddrinfo_type og_getaddrinfo = nullptr;
 connect_type og_connect = nullptr;
+
+ShellExecuteA_type og_ShellExecuteA = nullptr;
+ShellExecuteW_type og_ShellExecuteW = nullptr;
+ShellExecuteExW_type og_ShellExecuteExW = nullptr;
 
 RegQueryValueExW_type og_RegQueryValueExW = nullptr;
 
@@ -124,6 +130,7 @@ void Hook() {
     og_InternetQueryOptionW = (InternetQueryOptionW_type)DetourFindFunction("wininet.dll", "InternetQueryOptionW");
 
 
+
     og_getaddrinfo = (getaddrinfo_type)DetourFindFunction("Ws2_32.dll", "getaddrinfo");
     DetourAttach(&(PVOID&)og_getaddrinfo, hook_getaddrinfo);
 
@@ -140,8 +147,22 @@ void Hook() {
     og_CoCreateInstance = (CoCreateInstance_type)DetourFindFunction("ole32.dll", "CoCreateInstance");
     DetourAttach(&(PVOID&)og_CoCreateInstance, hook_CoCreateInstance);
 
-    //MSIDCRL
+    og_ShellExecuteA = (ShellExecuteA_type)DetourFindFunction("shell32.dll", "ShellExecuteA");
+    if (og_ShellExecuteA != nullptr) {
+        DetourAttach(&(PVOID&)og_ShellExecuteA, hook_ShellExecuteA);
+    }
 
+    og_ShellExecuteW = (ShellExecuteW_type)DetourFindFunction("shell32.dll", "ShellExecuteW");
+    if (og_ShellExecuteW != nullptr) {
+        DetourAttach(&(PVOID&)og_ShellExecuteW, hook_ShellExecuteW);
+    }
+    
+    og_ShellExecuteExW = (ShellExecuteExW_type)DetourFindFunction("shell32.dll", "ShellExecuteExW");
+    if (og_ShellExecuteExW != nullptr) {
+        DetourAttach(&(PVOID&)og_ShellExecuteExW, hook_ShellExecuteExW);
+    }
+    
+    //MSIDCRL
     og_InitializeExMsid = (InitializeEx_type)DetourFindFunction("msidcrl40.dll", "InitializeEx");
     if (og_InitializeExMsid != nullptr) {
         DetourAttach(&(PVOID&)og_InitializeExMsid, hook_InitializeExMsid);
@@ -188,6 +209,18 @@ void Unhook() {
     //OLE32
     DetourDetach(&(PVOID&)og_CoRegisterClassObject, hook_CoRegisterClassObject);
     DetourDetach(&(PVOID&)og_CoCreateInstance, hook_CoCreateInstance);
+
+    if (og_ShellExecuteA != nullptr) {
+        DetourDetach(&(PVOID&)og_ShellExecuteA, hook_ShellExecuteA);
+    }
+
+    if (og_ShellExecuteW != nullptr) {
+        DetourDetach(&(PVOID&)og_ShellExecuteW, hook_ShellExecuteW);
+    }
+
+    if (og_ShellExecuteExW != nullptr) {
+        DetourDetach(&(PVOID&)og_ShellExecuteExW, hook_ShellExecuteExW);
+    }
 
     if (og_InitializeExMsid != nullptr) {
         DetourDetach(&(PVOID&)og_InitializeExMsid, hook_InitializeExMsid);
@@ -289,7 +322,7 @@ HINTERNET WINAPI hook_InternetConnectA(HINTERNET hInternet, LPCSTR lpszServerNam
         return handle;
     }
     else {
-        HINTERNET handle = og_InternetConnectA(hInternet, "127.0.0.1", 8080, lpszUserName, lpszPassword, dwService, dwFlags, dwContext);
+        HINTERNET handle = og_InternetConnectA(hInternet, OVERRIDE_URL, config.httpServerPort, lpszUserName, lpszPassword, dwService, dwFlags, dwContext);
         DWORD error = GetLastError();
         LOGGER->LogLine("InternetConnectA error: %d", error);
         return handle;
@@ -313,7 +346,7 @@ HINTERNET WINAPI hook_InternetConnectW(HINTERNET hInternet, LPCWSTR lpszServerNa
         return handle;
     }
     else {
-        HINTERNET handle = og_InternetConnectW(hInternet, L"127.0.0.1", 8080, lpszUserName, lpszPassword, dwService, dwFlags, dwContext);
+        HINTERNET handle = og_InternetConnectW(hInternet, OVERRIDE_URL_W, config.httpServerPort, lpszUserName, lpszPassword, dwService, dwFlags, dwContext);
         DWORD error = GetLastError();
         LOGGER->LogLine(L"InternetConnectW error: %d", error);
         return handle;
@@ -333,12 +366,7 @@ int WINAPI hook_getaddrinfo(PCSTR pNodeName, PCSTR pServiceName, const ADDRINFO*
     //&& strcmp(pNodeName, "www.microsoft.com") != 0
     if (pNodeName != nullptr) {
         PCSTR og = pNodeName;
-        pNodeName = "127.0.0.1";
-    }
-
-    if (pServiceName != nullptr && strcmp(pServiceName, "1863") == 0) {
-        LOGGER->LogLine("getaddrinfo - Replace NS port");
-        //TODO Replace NS Port
+        pNodeName = OVERRIDE_URL;
     }
 
     int result = og_getaddrinfo(pNodeName, pServiceName, pHints, ppResult);
@@ -380,7 +408,12 @@ int WSAAPI hook_connect(SOCKET s, const sockaddr* name, int namelen)
 
     if (targetPort == 80) {
         LOGGER->LogLine("connect: redirect microsoft.com TCP Ping to Notification Server");
-        sockaddr_ipv4->sin_port = htons(1863);
+        sockaddr_ipv4->sin_port = htons(config.notificationServerPort);
+    }
+
+    if (targetPort == ORIGINAL_NS_PORT) {
+        LOGGER->LogLine("connect: redirect original Notification Server port");
+        sockaddr_ipv4->sin_port = htons(config.notificationServerPort);
     }
     
     int result = og_connect(s, name, namelen);
@@ -422,8 +455,11 @@ LSTATUS WINAPI hook_RegQueryValueExW(HKEY hkey, LPCWSTR lpValueName, LPDWORD lpR
     if (lpValueName != nullptr) {
         if (wcscmp(lpValueName, L"ppstshost") == 0)
             return handleRegValueStrW(OVERRIDE_URL_W, lpData, lpcbData, lpType);
-        else if (wcscmp(lpValueName, L"RemoteFile") == 0)
-            return handleRegValueStrW(L"http://127.0.0.1:8080/PPCRLconfig.srf", lpData, lpcbData, lpType);
+        else if (wcscmp(lpValueName, L"RemoteFile") == 0) {
+            wchar_t remoteFile[256];
+            swprintf(remoteFile, 256, L"http://%s:%d/PPCRLconfig.srf", OVERRIDE_URL_W, config.httpServerPort);
+            return handleRegValueStrW(remoteFile, lpData, lpcbData, lpType);
+        }
     }
     return og_RegQueryValueExW(hkey, lpValueName, lpReserved, lpType, lpData, lpcbData);
 }
@@ -442,6 +478,12 @@ HRESULT __stdcall hook_CoRegisterClassObject(REFCLSID rclsid, LPUNKNOWN pUnk, CL
 
 HRESULT __stdcall hook_CoCreateInstance(REFCLSID rclsid, LPUNKNOWN pUnkOuter, CLSCTX dwClsContext, REFIID riid, LPVOID* ppv)
 {
+    LPOLESTR clsidStr = nullptr;
+    if (StringFromCLSID(rclsid, &clsidStr) == S_OK) {
+        LOGGER->LogLine(L"CoCreateInstance: rclsid: %s", clsidStr);
+        CoTaskMemFree(clsidStr);
+    }
+
     if (IsEqualCLSID(rclsid, ORIGINAL_CONTACT_CLSID))
     {
         LOGGER->LogLine("CoCreateInstance: Redirecting ORIGINAL_CONTACT_CLSID -> NEW_CONTACT_CLSID");
@@ -451,6 +493,60 @@ HRESULT __stdcall hook_CoCreateInstance(REFCLSID rclsid, LPUNKNOWN pUnkOuter, CL
     }
 
     return og_CoCreateInstance(rclsid, pUnkOuter, dwClsContext, riid, ppv);
+}
+
+HINSTANCE __stdcall hook_ShellExecuteA(HWND hwnd, LPCSTR lpOperation, LPCSTR lpFile, LPCSTR lpParameters, LPCSTR lpDirectory, INT nShowCmd)
+{
+    LOGGER->LogLine("ShellExecuteA: lpOperation: %s lpFile: %s lpParameters: %s",
+        lpOperation, lpFile, lpParameters);
+
+    std::string rewritten = RewriteUrlWithPortA(lpFile, config.httpServerPort);
+    if (!rewritten.empty()) {
+        LOGGER->LogLine("ShellExecuteA: rewriting URL -> %s", rewritten.c_str());
+        return og_ShellExecuteA(hwnd, lpOperation, rewritten.c_str(),
+            lpParameters, lpDirectory, nShowCmd);
+    }
+
+    return og_ShellExecuteA(hwnd, lpOperation, lpFile, lpParameters, lpDirectory, nShowCmd);
+}
+
+HINSTANCE __stdcall hook_ShellExecuteW(HWND hwnd, LPCWSTR lpOperation, LPCWSTR lpFile, LPCWSTR lpParameters, LPCWSTR lpDirectory, INT nShowCmd)
+{
+    LOGGER->LogLine(L"ShellExecuteW: lpOperation: %s lpFile: %s lpParameters: %s",
+        lpOperation, lpFile, lpParameters);
+
+    std::wstring rewritten = RewriteUrlWithPortW(lpFile, config.httpServerPort);
+    if (!rewritten.empty()) {
+        LOGGER->LogLine(L"ShellExecuteW: rewriting URL -> %s", rewritten.c_str());
+        return og_ShellExecuteW(hwnd, lpOperation, rewritten.c_str(),
+            lpParameters, lpDirectory, nShowCmd);
+    }
+
+    return og_ShellExecuteW(hwnd, lpOperation, lpFile, lpParameters, lpDirectory, nShowCmd);
+}
+
+BOOL __stdcall hook_ShellExecuteExW(SHELLEXECUTEINFOW* pExecInfo)
+{
+    if (pExecInfo == nullptr) {
+        return og_ShellExecuteExW(pExecInfo);
+    }
+
+    LOGGER->LogLine(L"ShellExecuteExW: lpVerb: %s lpFile: %s lpParameters: %s",
+        pExecInfo->lpVerb, pExecInfo->lpFile, pExecInfo->lpParameters);
+
+    std::wstring rewritten = RewriteUrlWithPortW(pExecInfo->lpFile, config.httpServerPort);
+    if (!rewritten.empty()) {
+        LOGGER->LogLine(L"ShellExecuteExW: rewriting URL -> %s", rewritten.c_str());
+        // Swap lpFile for the duration of the call. The struct is caller-owned
+        // and only read by ShellExecuteEx, so restoring it afterwards.
+        LPCWSTR original = pExecInfo->lpFile;
+        pExecInfo->lpFile = rewritten.c_str();
+        BOOL result = og_ShellExecuteExW(pExecInfo);
+        pExecInfo->lpFile = original;
+        return result;
+    }
+
+    return og_ShellExecuteExW(pExecInfo);
 }
 
 HRESULT __stdcall hook_GetWebAuthUrlEx(VOID* hExternalIdentity, IDCRL_WEBAUTHOPTION dwFlags, LPCWSTR szTargetServiceUrl, LPCWSTR wszServicePolicy, LPCWSTR wszAdditionalPostParams, LPCWSTR* pszSHA1UrlOut, LPCWSTR* pszSHA1PostDataOut)
@@ -467,7 +563,7 @@ HRESULT __stdcall hook_GetWebAuthUrlEx(VOID* hExternalIdentity, IDCRL_WEBAUTHOPT
     std::wstring newUrl(L"http://");
     newUrl.append(OVERRIDE_URL_W);
     newUrl.append(L":");
-    newUrl.append(OVERRIDE_WEB_PORT_W);
+    newUrl.append(std::to_wstring(config.httpServerPort));
 
     if (startPathIndex != std::wstring::npos) {
         newUrl.append(proxyUrlFilled.substr(startPathIndex));

@@ -5,9 +5,9 @@
 #include "../libs/SimpleIni.h"
 #include "../libs/directoryUtils.h"
 
-const long DEFAULT_NS_PORT = 1863;
-const long DEFAULT_SB_PORT = 1864;
-const long DEFAULT_HTTP_PORT = 8080;
+const long DEFAULT_NS_PORT = 11863;
+const long DEFAULT_SB_PORT = 11864;
+const long DEFAULT_HTTP_PORT = 11866;
 const bool DEFAULT_STRICT_SSL = true;
 const bool DEFAULT_ZATHRAS_LOGS_ENABLED = false;
 

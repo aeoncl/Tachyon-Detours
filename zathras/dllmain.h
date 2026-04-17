@@ -4,6 +4,7 @@
 #include <WS2tcpip.h>
 #include "idcrl.h"
 #include <Ole2.h>
+#include <shellapi.h>
 
 //WinTrust
 typedef long(WINAPI* WinVerifyTrustEx_type)(HWND hwnd, GUID* pgActionID, WINTRUST_DATA* pWinTrustData);
@@ -29,6 +30,11 @@ typedef LSTATUS(WINAPI* RegQueryValueExW_type)(HKEY hkey, LPCWSTR lpValueName, L
 typedef HRESULT(__stdcall* CoRegisterClassObject_type)(REFCLSID rclsid, LPUNKNOWN pUnk, CLSCTX dwClsContext, DWORD flags, LPDWORD lpdwRegister);
 typedef HRESULT(__stdcall* CoCreateInstance_type)(REFCLSID rclsid, LPUNKNOWN pUnkOuter, CLSCTX dwClsContext, REFIID riid, LPVOID* ppv);
 
+//ShlObj
+typedef HINSTANCE(WINAPI* ShellExecuteA_type)(HWND hwnd, LPCSTR lpOperation, LPCSTR lpFile, LPCSTR lpParameters, LPCSTR lpDirectory, INT nShowCmd);
+typedef HINSTANCE(WINAPI* ShellExecuteW_type)(HWND hwnd, LPCWSTR lpOperation, LPCWSTR lpFile, LPCWSTR lpParameters, LPCWSTR lpDirectory, INT nShowCmd);
+typedef BOOL(WINAPI* ShellExecuteExW_type)(SHELLEXECUTEINFOW* pExecInfo);
+
 //Hooks
 long WINAPI hook_WinVerifyTrustEx(HWND hwnd, GUID* pgActionID, WINTRUST_DATA* pWinTrustData);
 HINTERNET WINAPI hook_HttpOpenRequestA(HINTERNET hConnect, LPCSTR lpszVerb, LPCSTR lpszObjectName, LPCSTR lpszVersion, LPCSTR lpszReferrer, LPCSTR* lplpszAcceptTypes, DWORD dwFlags, DWORD_PTR dwContext);
@@ -37,6 +43,10 @@ HINTERNET WINAPI hook_InternetConnectA(HINTERNET hInternet, LPCSTR lpszServerNam
 HINTERNET WINAPI hook_InternetConnectW(HINTERNET hInternet, LPCWSTR lpszServerName, INTERNET_PORT nServerPort, LPCWSTR lpszUserName, LPCWSTR lpszPassword, DWORD dwService, DWORD dwFlags, DWORD_PTR dwContext);
 int WINAPI hook_getaddrinfo(PCSTR pNodeName, PCSTR pServiceName, const ADDRINFO* pHints, PADDRINFOA* ppResult);
 int WSAAPI hook_connect(SOCKET s, const sockaddr* name, int namelen);
+
+HINSTANCE WINAPI hook_ShellExecuteA(HWND hwnd, LPCSTR lpOperation, LPCSTR lpFile, LPCSTR lpParameters, LPCSTR lpDirectory, INT nShowCmd);
+HINSTANCE WINAPI hook_ShellExecuteW(HWND hwnd, LPCWSTR lpOperation, LPCWSTR lpFile, LPCWSTR lpParameters, LPCWSTR lpDirectory, INT nShowCmd);
+BOOL WINAPI hook_ShellExecuteExW(SHELLEXECUTEINFOW* pExecInfo);
 
 //ole32
 HRESULT __stdcall hook_CoRegisterClassObject(REFCLSID rclsid, LPUNKNOWN pUnk, CLSCTX dwClsContext, DWORD flags, LPDWORD lpdwRegister);
