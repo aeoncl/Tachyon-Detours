@@ -9,7 +9,7 @@
 //For ntoa
 #pragma comment(lib, "Ws2_32.lib")
 #pragma comment(lib, "Ole32.lib")
-#pragma comment(lib, "Shell32.lib")
+//#pragma comment(lib, "Shell32.lib")
 
 
 #define IGNORE_MAGIC 0xDEADBEEF
@@ -146,21 +146,6 @@ void Hook() {
 
     og_CoCreateInstance = (CoCreateInstance_type)DetourFindFunction("ole32.dll", "CoCreateInstance");
     DetourAttach(&(PVOID&)og_CoCreateInstance, hook_CoCreateInstance);
-
-    og_ShellExecuteA = (ShellExecuteA_type)DetourFindFunction("shell32.dll", "ShellExecuteA");
-    if (og_ShellExecuteA != nullptr) {
-        DetourAttach(&(PVOID&)og_ShellExecuteA, hook_ShellExecuteA);
-    }
-
-    og_ShellExecuteW = (ShellExecuteW_type)DetourFindFunction("shell32.dll", "ShellExecuteW");
-    if (og_ShellExecuteW != nullptr) {
-        DetourAttach(&(PVOID&)og_ShellExecuteW, hook_ShellExecuteW);
-    }
-    
-    og_ShellExecuteExW = (ShellExecuteExW_type)DetourFindFunction("shell32.dll", "ShellExecuteExW");
-    if (og_ShellExecuteExW != nullptr) {
-        DetourAttach(&(PVOID&)og_ShellExecuteExW, hook_ShellExecuteExW);
-    }
     
     //MSIDCRL
     og_InitializeExMsid = (InitializeEx_type)DetourFindFunction("msidcrl40.dll", "InitializeEx");
@@ -209,18 +194,6 @@ void Unhook() {
     //OLE32
     DetourDetach(&(PVOID&)og_CoRegisterClassObject, hook_CoRegisterClassObject);
     DetourDetach(&(PVOID&)og_CoCreateInstance, hook_CoCreateInstance);
-
-    if (og_ShellExecuteA != nullptr) {
-        DetourDetach(&(PVOID&)og_ShellExecuteA, hook_ShellExecuteA);
-    }
-
-    if (og_ShellExecuteW != nullptr) {
-        DetourDetach(&(PVOID&)og_ShellExecuteW, hook_ShellExecuteW);
-    }
-
-    if (og_ShellExecuteExW != nullptr) {
-        DetourDetach(&(PVOID&)og_ShellExecuteExW, hook_ShellExecuteExW);
-    }
 
     if (og_InitializeExMsid != nullptr) {
         DetourDetach(&(PVOID&)og_InitializeExMsid, hook_InitializeExMsid);
@@ -493,60 +466,6 @@ HRESULT __stdcall hook_CoCreateInstance(REFCLSID rclsid, LPUNKNOWN pUnkOuter, CL
     }
 
     return og_CoCreateInstance(rclsid, pUnkOuter, dwClsContext, riid, ppv);
-}
-
-HINSTANCE __stdcall hook_ShellExecuteA(HWND hwnd, LPCSTR lpOperation, LPCSTR lpFile, LPCSTR lpParameters, LPCSTR lpDirectory, INT nShowCmd)
-{
-    LOGGER->LogLine("ShellExecuteA: lpOperation: %s lpFile: %s lpParameters: %s",
-        lpOperation, lpFile, lpParameters);
-
-    std::string rewritten = RewriteUrlWithPortA(lpFile, config.httpServerPort);
-    if (!rewritten.empty()) {
-        LOGGER->LogLine("ShellExecuteA: rewriting URL -> %s", rewritten.c_str());
-        return og_ShellExecuteA(hwnd, lpOperation, rewritten.c_str(),
-            lpParameters, lpDirectory, nShowCmd);
-    }
-
-    return og_ShellExecuteA(hwnd, lpOperation, lpFile, lpParameters, lpDirectory, nShowCmd);
-}
-
-HINSTANCE __stdcall hook_ShellExecuteW(HWND hwnd, LPCWSTR lpOperation, LPCWSTR lpFile, LPCWSTR lpParameters, LPCWSTR lpDirectory, INT nShowCmd)
-{
-    LOGGER->LogLine(L"ShellExecuteW: lpOperation: %s lpFile: %s lpParameters: %s",
-        lpOperation, lpFile, lpParameters);
-
-    std::wstring rewritten = RewriteUrlWithPortW(lpFile, config.httpServerPort);
-    if (!rewritten.empty()) {
-        LOGGER->LogLine(L"ShellExecuteW: rewriting URL -> %s", rewritten.c_str());
-        return og_ShellExecuteW(hwnd, lpOperation, rewritten.c_str(),
-            lpParameters, lpDirectory, nShowCmd);
-    }
-
-    return og_ShellExecuteW(hwnd, lpOperation, lpFile, lpParameters, lpDirectory, nShowCmd);
-}
-
-BOOL __stdcall hook_ShellExecuteExW(SHELLEXECUTEINFOW* pExecInfo)
-{
-    if (pExecInfo == nullptr) {
-        return og_ShellExecuteExW(pExecInfo);
-    }
-
-    LOGGER->LogLine(L"ShellExecuteExW: lpVerb: %s lpFile: %s lpParameters: %s",
-        pExecInfo->lpVerb, pExecInfo->lpFile, pExecInfo->lpParameters);
-
-    std::wstring rewritten = RewriteUrlWithPortW(pExecInfo->lpFile, config.httpServerPort);
-    if (!rewritten.empty()) {
-        LOGGER->LogLine(L"ShellExecuteExW: rewriting URL -> %s", rewritten.c_str());
-        // Swap lpFile for the duration of the call. The struct is caller-owned
-        // and only read by ShellExecuteEx, so restoring it afterwards.
-        LPCWSTR original = pExecInfo->lpFile;
-        pExecInfo->lpFile = rewritten.c_str();
-        BOOL result = og_ShellExecuteExW(pExecInfo);
-        pExecInfo->lpFile = original;
-        return result;
-    }
-
-    return og_ShellExecuteExW(pExecInfo);
 }
 
 HRESULT __stdcall hook_GetWebAuthUrlEx(VOID* hExternalIdentity, IDCRL_WEBAUTHOPTION dwFlags, LPCWSTR szTargetServiceUrl, LPCWSTR wszServicePolicy, LPCWSTR wszAdditionalPostParams, LPCWSTR* pszSHA1UrlOut, LPCWSTR* pszSHA1PostDataOut)
