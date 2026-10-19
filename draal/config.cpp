@@ -26,6 +26,10 @@ DraalConfig DraalConfig::LoadConfig(Logger* LOGGER, DWORD& errorCode)
 		return DraalConfig::Empty();
 	}
 	out.targetExecutable = std::string(targetExecutable);
+
+	const char* appModelIdOverride = ini.GetValue("draal", "app_model_id_override", "", false);
+	out.appModelIdOverride = std::string(appModelIdOverride);
+
 	out.loggingEnabled = ini.GetBoolValue("logs", "enabled", false, false);
 
 	CSimpleIniA::TNamesDepend dllsToRemove;
@@ -41,6 +45,8 @@ DraalConfig DraalConfig::LoadConfig(Logger* LOGGER, DWORD& errorCode)
 	for (auto entry : dllsToInject) {
 		out.dllsToInject.push_back(std::string(entry.pItem));
 	}
+
+	
 
 	return out;
 }

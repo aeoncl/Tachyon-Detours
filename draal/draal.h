@@ -27,7 +27,7 @@ typedef struct _PROCESS_BASIC_INFORMATION {
 
 int main(int argc, char* argv[]);
 
-DWORD CreateSuspendedProcess(LPCSTR processNameIn, PROCESS_INFORMATION& processInfoOut, int argc, char* argv[]);
+DWORD CreateSuspendedProcess(LPCSTR processNameIn, const std::string& appModelIdOverride, PROCESS_INFORMATION& processInfoOut, int argc, char* argv[]);
 DWORD GetRemoteBaseImageAddressFromPEB(HANDLE processIn, void*& addressOut);
 DWORD SanitizeImportAddressTable(HANDLE processIn, void* baseImageAddressIn, const std::vector<std::string>& dllsToRemove);
 DWORD InjectLibrairies(HANDLE processIn, const std::vector<std::string>& dllNames);

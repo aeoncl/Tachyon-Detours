@@ -9,6 +9,7 @@ public:
 	std::string targetExecutable;
 	std::vector<std::string> dllsToRemove;
 	std::vector<std::string> dllsToInject;
+	std::string appModelIdOverride;
 	bool loggingEnabled;
 	static DraalConfig LoadConfig(Logger* LOGGER, DWORD& errorCode);
 	static DraalConfig Empty();

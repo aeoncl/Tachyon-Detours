@@ -7,6 +7,7 @@
 #include "draal.h"
 #include <detours.h>
 #include "config.h"
+#include <ShObjIdl.h>
 #pragma comment(lib, "detours")
 
 Logger* LOGGER = nullptr;
@@ -14,6 +15,8 @@ PROCESS_INFORMATION PROCESS_INFO = {};
 
 int main(int argc, char* argv[])
 {
+
+
 	Logger* bootstrapLogger = CreateLogger(true, "init");
 	DWORD configError = ERROR_SUCCESS;
 	DraalConfig config = DraalConfig::LoadConfig(bootstrapLogger, configError);
@@ -25,7 +28,13 @@ int main(int argc, char* argv[])
 
 	SetupLogger(config.loggingEnabled, config.targetExecutable.c_str());
 
-	DWORD createMainProcessResult = CreateSuspendedProcess(config.targetExecutable.c_str(), PROCESS_INFO, argc, argv);
+	if (!config.appModelIdOverride.empty()) {
+		std::wstring wideAppModelIdOverride = std::wstring(config.appModelIdOverride.begin(), config.appModelIdOverride.end());
+		SetCurrentProcessExplicitAppUserModelID(wideAppModelIdOverride.c_str());
+	}
+
+
+	DWORD createMainProcessResult = CreateSuspendedProcess(config.targetExecutable.c_str(), config.appModelIdOverride, PROCESS_INFO, argc, argv);
 	if (createMainProcessResult != ERROR_SUCCESS) {
 		Cleanup();
 		return createMainProcessResult;
@@ -63,7 +72,7 @@ int main(int argc, char* argv[])
 	return EXIT_SUCCESS;
 }
 
-DWORD CreateSuspendedProcess(LPCSTR processNameIn, PROCESS_INFORMATION& processInfoOut, int argc, char* argv[]) {
+DWORD CreateSuspendedProcess(LPCSTR processNameIn, const std::string& appModelIdOverride, PROCESS_INFORMATION& processInfoOut, int argc, char* argv[]) {
 	std::string exeDir = GetProcessDirectory();
 	std::string targetPath = exeDir + processNameIn;
 
@@ -81,6 +90,11 @@ DWORD CreateSuspendedProcess(LPCSTR processNameIn, PROCESS_INFORMATION& processI
 	commandLineBuffer.push_back('\0');
 
 	STARTUPINFOA startupInfo = {};
+	if (!appModelIdOverride.empty()) {
+		startupInfo.dwFlags |= STARTF_TITLEISAPPID;
+		startupInfo.lpTitle = (LPSTR) appModelIdOverride.c_str();
+	}
+
 	startupInfo.cb = sizeof(STARTUPINFOA);
 
 	BOOL result = CreateProcessA(
