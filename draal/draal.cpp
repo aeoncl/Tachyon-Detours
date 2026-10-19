@@ -25,23 +25,23 @@ int main(int argc, char* argv[])
 
 	SetupLogger(config.loggingEnabled, config.targetExecutable.c_str());
 
-	DWORD createMainProcessResult = CreateSuspendedProcess(config.targetExecutable.c_str(), PROCESS_INFO, argc, argv);
+	DWORD createMainProcessResult = CreateDebuggedProcess(config.targetExecutable.c_str(), PROCESS_INFO, argc, argv);
 	if (createMainProcessResult != ERROR_SUCCESS) {
 		Cleanup();
 		return createMainProcessResult;
 	}
 
 	void* baseImageAddress = nullptr;
-	DWORD baseImageAddressResult = GetRemoteBaseImageAddressFromPEB(PROCESS_INFO.hProcess, baseImageAddress);
+	DWORD baseImageAddressResult = GetBaseImageAddressViaDebugEvent(PROCESS_INFO, baseImageAddress);
 	if (baseImageAddressResult != ERROR_SUCCESS) {
 		Cleanup();
 		return baseImageAddressResult;
 	}
 
-	LOGGER->LogLine("Got base Image Addr: 0x%x", baseImageAddress);
+	LOGGER->LogLine("Got base Image Addr: 0x%p", baseImageAddress);
 
 	DWORD sanitizeIATResult = SanitizeImportAddressTable(PROCESS_INFO.hProcess, baseImageAddress, config.dllsToRemove);
-	if (baseImageAddressResult != ERROR_SUCCESS) {
+	if (sanitizeIATResult != ERROR_SUCCESS) {
 		Cleanup();
 		return sanitizeIATResult;
 	}
@@ -52,9 +52,8 @@ int main(int argc, char* argv[])
 		return injectResult;
 	}
 
-	DWORD resumeResult = ResumeThread(PROCESS_INFO.hThread);
-	if (resumeResult == -1) {
-		LOGGER->LogLine("Fatal: Failed to ResumeThread: 0x%x", GetLastError());
+	DWORD resumeResult = ResumeDebuggedProcessAndDetach(PROCESS_INFO);
+	if (resumeResult != ERROR_SUCCESS) {
 		Cleanup();
 		return resumeResult;
 	}
@@ -63,7 +62,7 @@ int main(int argc, char* argv[])
 	return EXIT_SUCCESS;
 }
 
-DWORD CreateSuspendedProcess(LPCSTR processNameIn, PROCESS_INFORMATION& processInfoOut, int argc, char* argv[]) {
+DWORD CreateDebuggedProcess(LPCSTR processNameIn, PROCESS_INFORMATION& processInfoOut, int argc, char* argv[]) {
 	std::string exeDir = GetProcessDirectory();
 	std::string targetPath = exeDir + processNameIn;
 
@@ -83,13 +82,26 @@ DWORD CreateSuspendedProcess(LPCSTR processNameIn, PROCESS_INFORMATION& processI
 	STARTUPINFOA startupInfo = {};
 	startupInfo.cb = sizeof(STARTUPINFOA);
 
+	// Launch under a debugger instead of using CREATE_SUSPENDED.
+	//
+	// Reading the base image address from the child's PEB only works on Windows,
+	// where the kernel populates PEB->ImageBaseAddress before the initial thread
+	// exists. On Wine there is no kernel doing that: the user-mode loader fills
+	// the PEB while running on the initial thread, which has not executed under
+	// CREATE_SUSPENDED, so ReadProcessMemory of the PEB fails with
+	// ERROR_PARTIAL_COPY (0x12b).
+	//
+	// DEBUG_ONLY_THIS_PROCESS stops the child at CREATE_PROCESS_DEBUG_EVENT,
+	// which the loader emits *after* the main image is mapped (so lpBaseOfImage
+	// is reliable on both Wine and Windows) but *before* the entry point runs
+	// (so the IAT can still be patched in time).
 	BOOL result = CreateProcessA(
 		targetPath.c_str(),
 		commandLine.empty() ? NULL : commandLineBuffer.data(),
 		NULL,
 		NULL,
 		FALSE,
-		CREATE_SUSPENDED,
+		DEBUG_ONLY_THIS_PROCESS,
 		NULL,
 		exeDir.c_str(),
 		&startupInfo,
@@ -102,34 +114,68 @@ DWORD CreateSuspendedProcess(LPCSTR processNameIn, PROCESS_INFORMATION& processI
 		return error;
 	}
 
-	LOGGER->LogLine("%s started suspended (pid %lu)",processNameIn, processInfoOut.dwProcessId);
+	LOGGER->LogLine("%s started under debugger (pid %lu)",processNameIn, processInfoOut.dwProcessId);
 	return ERROR_SUCCESS;
 }
 
-DWORD GetRemoteBaseImageAddressFromPEB(HANDLE processIn, void*& baseImageAddressOut)
+DWORD GetBaseImageAddressViaDebugEvent(const PROCESS_INFORMATION& processInfoIn, void*& baseImageAddressOut)
 {
-	NtQueryInformationProcess_t NtQueryInformationProcess = (NtQueryInformationProcess_t)GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtQueryInformationProcess");
-	if (NtQueryInformationProcess == nullptr) {
-		LOGGER->LogLine("Fatal: Could not find NtQueryInformationProcess in ntdll.dll");
-		return ERROR_APP_INIT_FAILURE;
-	}
+	// CREATE_PROCESS_DEBUG_EVENT is normally the first event delivered, but loop
+	// defensively and acknowledge anything that arrives ahead of it.
+	for (;;) {
+		DEBUG_EVENT debugEvent = {};
+		if (!WaitForDebugEvent(&debugEvent, 30000)) {
+			DWORD error = GetLastError();
+			LOGGER->LogLine("Fatal: WaitForDebugEvent failed/timed out with error: 0x%x", error);
+			return error != ERROR_SUCCESS ? error : WAIT_TIMEOUT;
+		}
 
-	PROCESS_BASIC_INFORMATION pbi = {};
-	LONG ntQueryResult = NtQueryInformationProcess(processIn, 0, &pbi, sizeof(pbi), NULL);
-	if (ntQueryResult != 0) {
-		LOGGER->LogLine("Fatal: NtQueryInformationProcess failed with NT_ERROR: 0x%x", ntQueryResult);
-		return ntQueryResult;
-	}
+		if (debugEvent.dwDebugEventCode == CREATE_PROCESS_DEBUG_EVENT) {
+			baseImageAddressOut = debugEvent.u.CreateProcessInfo.lpBaseOfImage;
 
-	PEB peb = {};
-	BOOL readProcessMemoryResult = ReadProcessMemory(processIn, pbi.PebBaseAddress, &peb, sizeof(peb), NULL);
-	if (!readProcessMemoryResult) {
+			// The event hands us an open handle to the image file; we don't need it.
+			if (debugEvent.u.CreateProcessInfo.hFile != NULL) {
+				CloseHandle(debugEvent.u.CreateProcessInfo.hFile);
+			}
+
+			LOGGER->LogLine("CREATE_PROCESS_DEBUG_EVENT received for pid %lu. Image base: 0x%p",
+				debugEvent.dwProcessId, baseImageAddressOut);
+
+			// Leave this event un-continued on purpose: the debuggee stays stopped
+			// so the caller can patch the IAT before any of its code runs.
+			return ERROR_SUCCESS;
+		}
+
+		if (debugEvent.dwDebugEventCode == EXIT_PROCESS_DEBUG_EVENT) {
+			LOGGER->LogLine("Fatal: target exited before CREATE_PROCESS_DEBUG_EVENT was seen");
+			return ERROR_APP_INIT_FAILURE;
+		}
+
+		// Some other event arrived first; acknowledge it and keep waiting.
+		ContinueDebugEvent(debugEvent.dwProcessId, debugEvent.dwThreadId, DBG_CONTINUE);
+	}
+}
+
+DWORD ResumeDebuggedProcessAndDetach(const PROCESS_INFORMATION& processInfoIn)
+{
+	// Keep the child alive once draal detaches and exits.
+	DebugSetProcessKillOnExit(FALSE);
+
+	// Acknowledge the pending CREATE_PROCESS_DEBUG_EVENT so the loader proceeds.
+	if (!ContinueDebugEvent(processInfoIn.dwProcessId, processInfoIn.dwThreadId, DBG_CONTINUE)) {
 		DWORD error = GetLastError();
-		LOGGER->LogLine("Fatal: Could not extract ImageBaseAddress from PEB. ReadProcessMemory failed with error: 0x%x", error);
+		LOGGER->LogLine("Fatal: ContinueDebugEvent failed with error: 0x%x", error);
 		return error;
 	}
 
-	baseImageAddressOut = peb.ImageBaseAddress;
+	// Detach; the debuggee continues to run on its own.
+	if (!DebugActiveProcessStop(processInfoIn.dwProcessId)) {
+		DWORD error = GetLastError();
+		LOGGER->LogLine("Fatal: DebugActiveProcessStop failed with error: 0x%x", error);
+		return error;
+	}
+
+	LOGGER->LogLine("Patched and detached; target now running (pid %lu).", processInfoIn.dwProcessId);
 	return ERROR_SUCCESS;
 }
 
