@@ -4,21 +4,8 @@ Detour based utilities to connect WLM 14 to Tachyon
 The goal is to be compatible with existing third party servers that are using static patched binaries
 
 ## Components
- - **Draal**: An executable that starts a process and patches it's import table
  - **Zathras**: A rerouting DLL that makes the client connect to our server, amongst other things
  - **Epsilon3**: A DLL that manages one instance of the server (starting and stopping) tied to the clients lifecycle.
-
-## Draal
-Draal creates processes in SUSPENDED mode, and then patches their import table.
-You can specify in a configuration file which dlls to remove and which to add.
-Draal is compatible with COM invocations since it passes through the working directory of the target process and the command line arguments it receives.
-
-### Features
-- [x] exe import table add imports
-- [x] exe import table remove imports
-- [x] argument passthrough & workdir (for COM invocations) 
-- [x] config file
-
 
 ## Zathras
 Zathras is the backbone of Tachyon.
